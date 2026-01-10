@@ -8,18 +8,16 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
-import { useOrganization } from '@clerk/nextjs';
-import { PricingTable } from '@clerk/nextjs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
 import { billingInfoContent } from '@/config/infoconfig';
+import { mockOrganization } from '@/lib/mock-auth';
 
 export default function BillingPage() {
-  const { organization, isLoaded } = useOrganization();
+  const organization = mockOrganization;
 
   return (
     <PageContainer
-      isloading={!isLoaded}
       access={!!organization}
       accessFallback={
         <div className='flex min-h-[400px] items-center justify-center'>
@@ -41,12 +39,11 @@ export default function BillingPage() {
         <Alert>
           <Info className='h-4 w-4' />
           <AlertDescription>
-            Plans and subscriptions are managed through Clerk Billing. Subscribe
-            to a plan to unlock features and higher limits.
+            Plans and subscriptions are managed by your billing provider.
+            Subscribe to a plan to unlock features and higher limits.
           </AlertDescription>
         </Alert>
 
-        {/* Clerk Pricing Table */}
         <Card>
           <CardHeader>
             <CardTitle>Available Plans</CardTitle>
@@ -55,8 +52,14 @@ export default function BillingPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className='mx-auto max-w-4xl'>
-              <PricingTable for='organization' />
+            <div className='text-muted-foreground space-y-2'>
+              <p>
+                Add your billing UI here (Stripe, Paddle, or another provider).
+              </p>
+              <p>
+                This template no longer ships with a billing integration by
+                default.
+              </p>
             </div>
           </CardContent>
         </Card>

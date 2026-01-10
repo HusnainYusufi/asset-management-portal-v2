@@ -1,6 +1,5 @@
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { SignIn as ClerkSignInForm } from '@clerk/nextjs';
 import { GitHubLogoIcon } from '@radix-ui/react-icons';
 import { IconStar } from '@tabler/icons-react';
 import { Metadata } from 'next';
@@ -78,12 +77,19 @@ export default function SignInViewPage({ stars }: { stars: number }) {
               <span className='font-display font-medium'>{stars}</span>
             </div>
           </Link>
-          <ClerkSignInForm
-            initialValues={{
-              emailAddress: 'your_mail+clerk_test@example.com'
-            }}
-          />
-
+          <div className='border-border bg-card text-card-foreground w-full rounded-lg border p-6 text-center shadow-sm'>
+            <h2 className='text-lg font-semibold'>Authentication Disabled</h2>
+            <p className='text-muted-foreground mt-2 text-sm'>
+              This template no longer ships with a built-in authentication
+              provider. Connect your own auth service to enable sign-in.
+            </p>
+            <Link
+              href='/dashboard/overview'
+              className={cn(buttonVariants({ className: 'mt-4 w-full' }))}
+            >
+              Continue to dashboard
+            </Link>
+          </div>
           <p className='text-muted-foreground px-8 text-center text-sm'>
             By clicking continue, you agree to our{' '}
             <Link

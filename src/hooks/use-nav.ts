@@ -3,7 +3,7 @@
 /**
  * Fully client-side hook for filtering navigation items based on RBAC
  *
- * This hook uses Clerk's client-side hooks to check permissions, roles, and organization
+ * This hook uses local mock auth data to check permissions, roles, and organization
  * without any server calls. This is perfect for navigation visibility (UX only).
  *
  * Performance:
@@ -17,8 +17,8 @@
  */
 
 import { useMemo } from 'react';
-import { useOrganization, useUser } from '@clerk/nextjs';
 import type { NavItem } from '@/types';
+import { mockOrganization, mockUser } from '@/lib/mock-auth';
 
 /**
  * Hook to filter navigation items based on RBAC (fully client-side)
@@ -27,22 +27,16 @@ import type { NavItem } from '@/types';
  * @returns Filtered items
  */
 export function useFilteredNavItems(items: NavItem[]) {
-  const { organization, membership } = useOrganization();
-  const { user } = useUser();
-
   // Memoize context and permissions
   const accessContext = useMemo(() => {
-    const permissions = membership?.permissions || [];
-    const role = membership?.role;
-
     return {
-      organization: organization ?? undefined,
-      user: user ?? undefined,
-      permissions: permissions as string[],
-      role: role ?? undefined,
-      hasOrg: !!organization
+      organization: mockOrganization ?? undefined,
+      user: mockUser ?? undefined,
+      permissions: mockOrganization?.permissions ?? [],
+      role: mockOrganization?.role ?? undefined,
+      hasOrg: !!mockOrganization
     };
-  }, [organization?.id, user?.id, membership?.permissions, membership?.role]);
+  }, []);
 
   // Filter items synchronously (all client-side)
   const filteredItems = useMemo(() => {
@@ -78,7 +72,7 @@ export function useFilteredNavItems(items: NavItem[]) {
           }
         }
 
-        // Note: Plans and features require server-side checks with Clerk's has() function
+        // Note: Plans and features require server-side checks in your auth/billing provider
         // For navigation visibility, you can either:
         // 1. Store plan/feature info in organization metadata (client-accessible)
         // 2. Use server actions (current approach)
