@@ -47,7 +47,7 @@ export function UserNav() {
             <DropdownMenuItem>New Team</DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => router.push('/auth/sign-in')}>
+          <DropdownMenuItem onClick={() => router.push('/auth/login')}>
             Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>

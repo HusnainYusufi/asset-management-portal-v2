@@ -66,7 +66,7 @@ export default function AppSidebar() {
       </SidebarHeader>
       <SidebarContent className='overflow-x-hidden'>
         <SidebarGroup>
-          <SidebarGroupLabel>Overview</SidebarGroupLabel>
+          <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarMenu>
             {filteredItems.map((item) => {
               const Icon = item.icon ? Icons[item.icon] : Icons.logo;
@@ -188,7 +188,7 @@ export default function AppSidebar() {
                   <button
                     type='button'
                     className='w-full text-left'
-                    onClick={() => router.push('/auth/sign-in')}
+                    onClick={() => router.push('/auth/login')}
                   >
                     Sign out
                   </button>

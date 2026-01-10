@@ -34,88 +34,50 @@ import { NavItem } from '@/types';
  */
 export const navItems: NavItem[] = [
   {
-    title: 'Dashboard',
-    url: '/dashboard/overview',
-    icon: 'dashboard',
-    isActive: false,
-    shortcut: ['d', 'd'],
+    title: 'Assets',
+    url: '/dashboard/assets',
+    icon: 'assets',
+    shortcut: ['a', 'a'],
     items: []
   },
   {
-    title: 'Workspaces',
-    url: '/dashboard/workspaces',
-    icon: 'workspace',
-    isActive: false,
+    title: 'Showrooms',
+    url: '/dashboard/showrooms',
+    icon: 'showrooms',
+    shortcut: ['s', 's'],
     items: []
   },
   {
-    title: 'Teams',
-    url: '/dashboard/workspaces/team',
-    icon: 'teams',
-    isActive: false,
-    items: [],
-    // Require organization to be active
-    access: { requireOrg: true }
-    // Alternative: require specific permission
-    // access: { requireOrg: true, permission: 'org:teams:view' }
-  },
-  {
-    title: 'Product',
-    url: '/dashboard/product',
-    icon: 'product',
-    shortcut: ['p', 'p'],
-    isActive: false,
+    title: 'Users & Roles',
+    url: '/dashboard/users',
+    icon: 'users',
+    shortcut: ['u', 'u'],
     items: []
   },
   {
-    title: 'Kanban',
-    url: '/dashboard/kanban',
-    icon: 'kanban',
-    shortcut: ['k', 'k'],
-    isActive: false,
-    items: []
-  },
-  {
-    title: 'Pro',
-    url: '#', // Placeholder as there is no direct link for the parent
-    icon: 'pro',
-    isActive: true,
+    title: 'Auth',
+    url: '#',
+    icon: 'auth',
     items: [
       {
-        title: 'Exclusive',
-        url: '/dashboard/exclusive',
-        icon: 'exclusive',
-        shortcut: ['m', 'm']
-      }
-    ]
-  },
-  {
-    title: 'Account',
-    url: '#', // Placeholder as there is no direct link for the parent
-    icon: 'account',
-    isActive: true,
-    items: [
-      {
-        title: 'Profile',
-        url: '/dashboard/profile',
-        icon: 'profile',
-        shortcut: ['m', 'm']
+        title: 'Superadmin Setup',
+        url: '/auth/superadmin-setup',
+        icon: 'auth'
       },
       {
-        title: 'Billing',
-        url: '/dashboard/billing',
-        icon: 'billing',
-        shortcut: ['b', 'b'],
-        // Only show billing if in organization context
-        access: { requireOrg: true }
-        // Alternative: require billing management permission
-        // access: { requireOrg: true, permission: 'org:manage:billing' }
+        title: 'Client Onboard',
+        url: '/auth/onboard',
+        icon: 'auth'
       },
       {
         title: 'Login',
-        shortcut: ['l', 'l'],
-        url: '/',
+        url: '/auth/login',
         icon: 'login'
+      },
+      {
+        title: 'Reset Password',
+        url: '/auth/reset-password',
+        icon: 'auth'
       }
     ]
   }
