@@ -3,6 +3,7 @@ import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { toast } from "sonner";
 
+import apiClient from "@/api/apiClient";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
