@@ -3,14 +3,15 @@ import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { toast } from "sonner";
 
+import apiClient from "@/api/apiClient";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useFieldArray, useForm } from "react-hook-form";
 
 type AssetField = {
@@ -139,6 +140,8 @@ const createId = () => Math.random().toString(36).slice(2, 10);
 export default function AssetsPage() {
 	const [textAssets, setTextAssets] = useState<TextAssetRow[]>(MOCK_TEXT_ASSETS);
 	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>(MOCK_FILE_ASSETS);
+	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
+	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -235,8 +238,36 @@ export default function AssetsPage() {
 		form.reset(EXAMPLE_FORM_VALUES);
 	};
 
-	const handleSubmit = (values: AssetFormValues) => {
+	const handleSubmit = async (values: AssetFormValues) => {
 		const tags = parseTags(values.tags);
+		const payload = {
+			name: values.name,
+			type: values.type,
+			fields:
+				values.assetKind === "TEXT"
+					? values.fields
+							.filter((field) => field.key || field.value)
+							.map((field) => ({
+								key: field.key,
+								type: field.type,
+								value: field.value,
+								isSecret: field.isSecret,
+							}))
+					: [],
+			tags,
+		};
+
+		try {
+			await apiClient.post({
+				url: "http://localhost:3267/assets",
+				data: payload,
+			});
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to create asset", { position: "top-center" });
+			return;
+		}
+
 		if (values.assetKind === "FILE") {
 			const newFileAsset: FileAssetRow = {
 				id: createId(),
@@ -260,8 +291,9 @@ export default function AssetsPage() {
 			};
 			setTextAssets((prev) => [newTextAsset, ...prev]);
 		}
-		toast.success("Asset staged", { position: "top-center" });
+		toast.success("Asset created", { position: "top-center" });
 		form.reset(DEFAULT_FORM_VALUES);
+		setIsDialogOpen(false);
 	};
 
 	return (
@@ -269,20 +301,47 @@ export default function AssetsPage() {
 			<Card>
 				<CardHeader>
 					<div className="flex flex-wrap items-center justify-between gap-3">
-						<div className="text-lg font-semibold">Add Asset</div>
-						<div className="flex flex-wrap gap-2">
-							<Button type="button" variant="outline" onClick={handleLoadExample}>
-								Load Example
-							</Button>
-							<Button type="button" onClick={form.handleSubmit(handleSubmit)}>
-								Add Asset
-							</Button>
-						</div>
+						<div className="text-lg font-semibold">Assets</div>
+						<Button type="button" onClick={() => setIsDialogOpen(true)}>
+							Add New Asset
+						</Button>
 					</div>
 				</CardHeader>
 				<CardContent>
+					<div className="flex flex-wrap items-center gap-3">
+						<span className="text-sm font-medium text-muted-foreground">Show assets</span>
+						<div className="flex items-center gap-2 rounded-full border px-3 py-1.5">
+							<span className={assetView === "TEXT" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
+								Text
+							</span>
+							<Switch
+								checked={assetView === "FILE"}
+								onCheckedChange={(checked) => setAssetView(checked ? "FILE" : "TEXT")}
+							/>
+							<span className={assetView === "FILE" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
+								File
+							</span>
+						</div>
+					</div>
+					<div className="mt-4">
+						<Table
+							rowKey="id"
+							size="small"
+							scroll={{ x: "max-content" }}
+							pagination={false}
+							columns={assetView === "TEXT" ? textColumns : fileColumns}
+							dataSource={assetView === "TEXT" ? textAssets : fileAssets}
+						/>
+					</div>
+				</CardContent>
+			</Card>
+			<Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+					<DialogHeader>
+						<DialogTitle>Add new asset</DialogTitle>
+					</DialogHeader>
 					<Form {...form}>
-						<form className="space-y-6">
+						<form className="space-y-6" onSubmit={form.handleSubmit(handleSubmit)}>
 							<div className="grid gap-4 md:grid-cols-2">
 								<FormField
 									control={form.control}
@@ -477,44 +536,21 @@ export default function AssetsPage() {
 									</div>
 								</div>
 							)}
+							<DialogFooter className="flex flex-wrap justify-between gap-2">
+								<Button type="button" variant="outline" onClick={handleLoadExample}>
+									Load Example
+								</Button>
+								<div className="flex gap-2">
+									<Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+										Cancel
+									</Button>
+									<Button type="submit">Save Asset</Button>
+								</div>
+							</DialogFooter>
 						</form>
 					</Form>
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader>
-					<div className="text-lg font-semibold">Assets</div>
-				</CardHeader>
-				<CardContent>
-					<Tabs defaultValue="text-assets" className="w-full">
-						<TabsList>
-							<TabsTrigger value="text-assets">Text Assets</TabsTrigger>
-							<TabsTrigger value="file-assets">File Assets</TabsTrigger>
-						</TabsList>
-						<TabsContent value="text-assets">
-							<Table
-								rowKey="id"
-								size="small"
-								scroll={{ x: "max-content" }}
-								pagination={false}
-								columns={textColumns}
-								dataSource={textAssets}
-							/>
-						</TabsContent>
-						<TabsContent value="file-assets">
-							<Table
-								rowKey="id"
-								size="small"
-								scroll={{ x: "max-content" }}
-								pagination={false}
-								columns={fileColumns}
-								dataSource={fileAssets}
-							/>
-						</TabsContent>
-					</Tabs>
-				</CardContent>
-			</Card>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
