@@ -258,10 +258,14 @@ export default function AssetsPage() {
 		};
 
 		try {
-			await apiClient.post({
-				url: "http://localhost:3267/assets",
-				data: payload,
+			const response = await fetch("http://localhost:3267/assets", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
 			});
+			if (!response.ok) {
+				throw new Error("Failed to create asset");
+			}
 		} catch (error) {
 			console.error(error);
 			toast.error("Failed to create asset", { position: "top-center" });
