@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import apiClient from "@/api/apiClient";
+import { useUserRoles } from "@/store/userStore";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -83,6 +84,8 @@ export default function ClientsPage() {
 	const [open, setOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [clients, setClients] = useState<ClientRow[]>([]);
+	const roles = useUserRoles();
+	const isOwner = roles.some((role) => role.code === "OWNER" || role.name === "OWNER");
 	const form = useForm<ClientOnboardPayload>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -120,21 +123,24 @@ export default function ClientsPage() {
 		[],
 	);
 
-	const fetchClients = async () => {
+	const fetchClients = useCallback(async () => {
 		try {
 			const response = await apiClient.get<ClientsResponse | ClientApiItem[]>({
 				url: "/clients",
 			});
 			const items = extractClients(response);
 			setClients(mapClientRows(items));
-		} catch (error) {
+		} catch (_error) {
 			// Errors are already surfaced via the API client interceptor.
 		}
-	};
+	}, []);
 
 	useEffect(() => {
+		if (isOwner) {
+			return;
+		}
 		void fetchClients();
-	}, []);
+	}, [fetchClients, isOwner]);
 
 	const handleOpen = () => {
 		form.reset(DEFAULT_FORM_VALUES);
@@ -168,12 +174,25 @@ export default function ClientsPage() {
 			} else {
 				toast.error("Client onboarding failed", { position: "top-center" });
 			}
-		} catch (error) {
+		} catch (_error) {
 			// Errors are already surfaced via the API client interceptor.
 		} finally {
 			setSubmitting(false);
 		}
 	};
+
+	if (isOwner) {
+		return (
+			<Card>
+				<CardHeader>
+					<div className="text-lg font-semibold">Clients</div>
+				</CardHeader>
+				<CardContent>
+					<div className="text-sm text-muted-foreground">Clients are managed by administrators.</div>
+				</CardContent>
+			</Card>
+		);
+	}
 
 	return (
 		<Card>
@@ -184,7 +203,14 @@ export default function ClientsPage() {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<Table rowKey="id" size="small" scroll={{ x: "max-content" }} pagination={false} columns={columns} dataSource={clients} />
+				<Table
+					rowKey="id"
+					size="small"
+					scroll={{ x: "max-content" }}
+					pagination={false}
+					columns={columns}
+					dataSource={clients}
+				/>
 			</CardContent>
 
 			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
