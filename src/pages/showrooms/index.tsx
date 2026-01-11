@@ -641,7 +641,7 @@ export default function ShowroomsPage() {
 			</CardContent>
 
 			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
-				<DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl sm:max-w-6xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Create Showroom</DialogTitle>
 						<div className="text-sm text-muted-foreground">
