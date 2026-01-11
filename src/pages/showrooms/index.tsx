@@ -8,7 +8,8 @@ import apiClient from "@/api/apiClient";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/ui/form";
+import { Badge } from "@/ui/badge";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 
@@ -55,6 +56,8 @@ type ShowroomRow = {
 	metaCount: number;
 	templateCount: number;
 	lastUpdated: string;
+	metaFields?: ShowroomMetaField[];
+	templates?: ShowroomTemplate[];
 };
 
 type ShowroomFormValues = {
@@ -75,7 +78,28 @@ const DEFAULT_FORM_VALUES: ShowroomFormValues = {
 	templates: [DEFAULT_TEMPLATE],
 };
 
-const STEP_LABELS = ["Basics", "Meta Fields", "Templates"];
+const STEP_DETAILS = [
+	{
+		label: "Basics",
+		title: "Showroom basics",
+		description: "Name your showroom and capture its primary location details.",
+	},
+	{
+		label: "Meta Fields",
+		title: "Custom metadata",
+		description: "Add optional metadata like staffing, operating hours, or contact details.",
+	},
+	{
+		label: "Templates",
+		title: "Template setup",
+		description: "Define template layouts with dimensions for consistent showroom assets.",
+	},
+	{
+		label: "Review",
+		title: "Review & confirm",
+		description: "Double-check the information before creating the showroom.",
+	},
+];
 
 const formatDate = (value?: string) => (value ? value.slice(0, 10) : "-");
 
@@ -107,6 +131,8 @@ const mapShowroomRow = (item: ShowroomApiItem): ShowroomRow => ({
 	metaCount: item.metaFields?.length ?? 0,
 	templateCount: item.templates?.length ?? 0,
 	lastUpdated: formatDate(item.updatedAt ?? item.createdAt),
+	metaFields: item.metaFields ?? [],
+	templates: item.templates ?? [],
 });
 
 export default function ShowroomsPage() {
@@ -116,6 +142,7 @@ export default function ShowroomsPage() {
 	const [open, setOpen] = useState(false);
 	const [stepIndex, setStepIndex] = useState(0);
 	const [submitting, setSubmitting] = useState(false);
+	const [searchTerm, setSearchTerm] = useState("");
 	const form = useForm<ShowroomFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -127,6 +154,7 @@ export default function ShowroomsPage() {
 		control: form.control,
 		name: "templates",
 	});
+	const watchedValues = form.watch();
 
 	const columns = useMemo<ColumnsType<ShowroomRow>>(
 		() => [
@@ -135,36 +163,77 @@ export default function ShowroomsPage() {
 				dataIndex: "name",
 				key: "name",
 				width: 220,
+				sorter: (a, b) => a.name.localeCompare(b.name),
+				render: (_, record) => (
+					<div className="space-y-1">
+						<div className="font-medium text-foreground">{record.name}</div>
+						<div className="text-xs text-muted-foreground">ID: {record.id}</div>
+					</div>
+				),
 			},
 			{
 				title: "Location",
 				dataIndex: "location",
 				key: "location",
 				width: 200,
+				sorter: (a, b) => a.location.localeCompare(b.location),
 			},
 			{
 				title: "Meta Fields",
 				dataIndex: "metaCount",
 				key: "metaCount",
 				width: 140,
+				sorter: (a, b) => a.metaCount - b.metaCount,
+				render: (value: number) => <span className="font-medium">{value}</span>,
 			},
 			{
 				title: "Templates",
 				dataIndex: "templateCount",
 				key: "templateCount",
 				width: 140,
+				sorter: (a, b) => a.templateCount - b.templateCount,
+				render: (value: number) => <span className="font-medium">{value}</span>,
 			},
 			{
 				title: "Last Updated",
 				dataIndex: "lastUpdated",
 				key: "lastUpdated",
 				width: 140,
+				sorter: (a, b) => a.lastUpdated.localeCompare(b.lastUpdated),
 			},
 		],
 		[],
 	);
 
-	const showroomRows = useMemo(() => showrooms.map(mapShowroomRow), [showrooms]);
+	const filteredShowrooms = useMemo(() => {
+		const normalized = searchTerm.trim().toLowerCase();
+		if (!normalized) {
+			return showrooms;
+		}
+		return showrooms.filter((showroom) => {
+			const metaMatch =
+				showroom.metaFields?.some((field) => `${field.key} ${field.value}`.toLowerCase().includes(normalized)) ?? false;
+			const templateMatch =
+				showroom.templates?.some((template) =>
+					`${template.name} ${template.description ?? ""}`.toLowerCase().includes(normalized),
+				) ?? false;
+			return (
+				showroom.name.toLowerCase().includes(normalized) ||
+				showroom.location.toLowerCase().includes(normalized) ||
+				metaMatch ||
+				templateMatch
+			);
+		});
+	}, [searchTerm, showrooms]);
+
+	const showroomRows = useMemo(() => filteredShowrooms.map(mapShowroomRow), [filteredShowrooms]);
+	const summaryCounts = useMemo(
+		() => ({
+			total: showrooms.length,
+			filtered: filteredShowrooms.length,
+		}),
+		[filteredShowrooms.length, showrooms.length],
+	);
 
 	const fetchShowrooms = useCallback(async () => {
 		setIsLoading(true);
@@ -179,10 +248,8 @@ export default function ShowroomsPage() {
 	}, []);
 
 	useEffect(() => {
-		if (viewMode === "cards") {
-			void fetchShowrooms();
-		}
-	}, [fetchShowrooms, viewMode]);
+		void fetchShowrooms();
+	}, [fetchShowrooms]);
 
 	const handleOpen = () => {
 		form.reset(DEFAULT_FORM_VALUES);
@@ -232,9 +299,7 @@ export default function ShowroomsPage() {
 			if (response) {
 				toast.success("SHOWROOM CREATED", { position: "top-center" });
 				setOpen(false);
-				if (viewMode === "cards") {
-					await fetchShowrooms();
-				}
+				await fetchShowrooms();
 			} else {
 				toast.error("Showroom creation failed", { position: "top-center" });
 			}
@@ -245,7 +310,18 @@ export default function ShowroomsPage() {
 		}
 	};
 
-	const isLastStep = stepIndex === STEP_LABELS.length - 1;
+	const handleNextStep = async () => {
+		if (stepIndex === 0) {
+			const isValid = await form.trigger(["name", "location"]);
+			if (!isValid) {
+				return;
+			}
+		}
+		setStepIndex((prev) => Math.min(prev + 1, STEP_DETAILS.length - 1));
+	};
+
+	const isLastStep = stepIndex === STEP_DETAILS.length - 1;
+	const currentStep = STEP_DETAILS[stepIndex];
 
 	const TemplateFields = ({ index }: { index: number }) => {
 		const sizesArray = useFieldArray({
@@ -386,6 +462,60 @@ export default function ShowroomsPage() {
 		);
 	};
 
+	const renderExpandedRow = (record: ShowroomRow) => (
+		<div className="grid gap-4 md:grid-cols-2">
+			<div className="rounded-md border border-border bg-muted/20 p-4">
+				<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
+				{record.metaFields?.length ? (
+					<div className="mt-3 flex flex-wrap gap-2">
+						{record.metaFields.map((field, index) => (
+							<Badge key={`${field.key}-${index}`} variant="secondary">
+								{field.key || "Key"}: {field.value || "Value"}
+							</Badge>
+						))}
+					</div>
+				) : (
+					<div className="mt-2 text-sm text-muted-foreground">No meta fields configured.</div>
+				)}
+			</div>
+			<div className="rounded-md border border-border bg-muted/20 p-4">
+				<div className="text-xs font-semibold uppercase text-muted-foreground">Templates</div>
+				{record.templates?.length ? (
+					<div className="mt-3 space-y-3 text-sm">
+						{record.templates.map((template, index) => (
+							<div key={`${template.name}-${index}`} className="space-y-1">
+								<div className="font-medium">{template.name || `Template ${index + 1}`}</div>
+								{template.description && <div className="text-xs text-muted-foreground">{template.description}</div>}
+								{template.sizes?.length ? (
+									<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+										{template.sizes.map((size, sizeIndex) => (
+											<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
+												{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
+											</Badge>
+										))}
+									</div>
+								) : (
+									<div className="text-xs text-muted-foreground">No sizes configured.</div>
+								)}
+							</div>
+						))}
+					</div>
+				) : (
+					<div className="mt-2 text-sm text-muted-foreground">No templates configured.</div>
+				)}
+			</div>
+		</div>
+	);
+
+	const reviewMetaFields = watchedValues.metaFields?.filter((field) => field.key.trim() || field.value.trim()) ?? [];
+	const reviewTemplates =
+		watchedValues.templates?.filter(
+			(template) =>
+				template.name.trim() ||
+				template.description.trim() ||
+				template.sizes.some((size) => size.label.trim() || size.width || size.height || size.unit.trim()),
+		) ?? [];
+
 	return (
 		<Card>
 			<CardHeader>
@@ -400,6 +530,22 @@ export default function ShowroomsPage() {
 				</div>
 			</CardHeader>
 			<CardContent>
+				<div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+					<div className="space-y-1 text-sm text-muted-foreground">
+						<div className="font-medium text-foreground">Showrooms overview</div>
+						<div>
+							Showing {summaryCounts.filtered} of {summaryCounts.total} showrooms
+						</div>
+					</div>
+					<div className="flex flex-wrap items-center gap-2">
+						<Input
+							placeholder="Search by name, location, meta fields, or templates"
+							value={searchTerm}
+							onChange={(event) => setSearchTerm(event.target.value)}
+							className="w-full sm:w-80"
+						/>
+					</div>
+				</div>
 				<Tabs
 					value={viewMode}
 					onValueChange={(value) => setViewMode(value === "cards" ? "cards" : "table")}
@@ -414,36 +560,46 @@ export default function ShowroomsPage() {
 							rowKey="id"
 							size="small"
 							scroll={{ x: "max-content" }}
-							pagination={false}
+							pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 12, 24, 48] }}
 							loading={isLoading}
 							columns={columns}
 							dataSource={showroomRows}
+							expandable={{
+								expandedRowRender: renderExpandedRow,
+							}}
 						/>
 					</TabsContent>
 					<TabsContent value="cards">
 						{isLoading ? (
 							<div className="text-sm text-muted-foreground">Loading showrooms...</div>
-						) : showrooms.length === 0 ? (
-							<div className="text-sm text-muted-foreground">No showrooms yet. Create one to get started.</div>
+						) : filteredShowrooms.length === 0 ? (
+							<div className="text-sm text-muted-foreground">
+								No showrooms match your search. Try adjusting the filters.
+							</div>
 						) : (
 							<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-								{showrooms.map((showroom) => (
+								{filteredShowrooms.map((showroom) => (
 									<Card key={showroom._id ?? showroom.id ?? showroom.name} className="border border-border">
 										<CardHeader>
-											<div className="space-y-1">
-												<div className="text-base font-semibold">{showroom.name}</div>
-												<div className="text-sm text-muted-foreground">{showroom.location}</div>
+											<div className="space-y-2">
+												<div>
+													<div className="text-base font-semibold">{showroom.name}</div>
+													<div className="text-sm text-muted-foreground">{showroom.location}</div>
+												</div>
+												<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+													<Badge variant="outline">{showroom.metaFields?.length ?? 0} meta fields</Badge>
+													<Badge variant="outline">{showroom.templates?.length ?? 0} templates</Badge>
+												</div>
 											</div>
 										</CardHeader>
 										<CardContent className="space-y-3">
 											<div className="text-xs font-semibold text-muted-foreground">Meta Fields</div>
 											{showroom.metaFields?.length ? (
-												<div className="space-y-1 text-sm">
+												<div className="flex flex-wrap gap-2 text-sm">
 													{showroom.metaFields.map((field, index) => (
-														<div key={`${field.key}-${index}`} className="flex justify-between gap-2">
-															<span className="text-muted-foreground">{field.key}</span>
-															<span>{field.value}</span>
-														</div>
+														<Badge key={`${field.key}-${index}`} variant="secondary">
+															{field.key}: {field.value}
+														</Badge>
 													))}
 												</div>
 											) : (
@@ -453,20 +609,17 @@ export default function ShowroomsPage() {
 											{showroom.templates?.length ? (
 												<div className="space-y-2 text-sm">
 													{showroom.templates.map((template, index) => (
-														<div key={`${template.name}-${index}`} className="space-y-1 rounded-md bg-muted/30 p-2">
+														<div key={`${template.name}-${index}`} className="space-y-2 rounded-md bg-muted/30 p-3">
 															<div className="font-medium">{template.name || `Template ${index + 1}`}</div>
 															{template.description && (
 																<div className="text-xs text-muted-foreground">{template.description}</div>
 															)}
 															{template.sizes?.length ? (
-																<div className="space-y-1 text-xs text-muted-foreground">
+																<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
 																	{template.sizes.map((size, sizeIndex) => (
-																		<div key={`${size.label}-${sizeIndex}`} className="flex justify-between gap-2">
-																			<span>{size.label || `Size ${sizeIndex + 1}`}</span>
-																			<span>
-																				{size.width}x{size.height} {size.unit}
-																			</span>
-																		</div>
+																		<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
+																			{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
+																		</Badge>
 																	))}
 																</div>
 															) : (
@@ -488,111 +641,200 @@ export default function ShowroomsPage() {
 			</CardContent>
 
 			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
-				<DialogContent className="max-w-3xl">
+				<DialogContent className="max-w-4xl">
 					<DialogHeader>
 						<DialogTitle>Create Showroom</DialogTitle>
 					</DialogHeader>
 					<Form {...form}>
 						<form className="space-y-6" onSubmit={form.handleSubmit(handleCreateShowroom)}>
-							<div className="flex flex-wrap gap-2 text-xs font-semibold uppercase text-muted-foreground">
-								{STEP_LABELS.map((label, index) => (
-									<div
-										key={label}
-										className={`rounded-full px-3 py-1 ${index === stepIndex ? "bg-primary/10 text-primary" : "bg-muted/40"}`}
-									>
-										{label}
-									</div>
-								))}
-							</div>
-							{stepIndex === 0 && (
-								<div className="grid gap-4 md:grid-cols-2">
-									<FormField
-										control={form.control}
-										name="name"
-										rules={{ required: "Showroom name is required" }}
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>Name</FormLabel>
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name="location"
-										rules={{ required: "Location is required" }}
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>Location</FormLabel>
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-								</div>
-							)}
-							{stepIndex === 1 && (
-								<div className="space-y-4">
-									{metaFieldsArray.fields.map((field, index) => (
-										<div key={field.id} className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-											<FormField
-												control={form.control}
-												name={`metaFields.${index}.key` as const}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Key</FormLabel>
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-														<FormMessage />
-													</FormItem>
-												)}
-											/>
-											<FormField
-												control={form.control}
-												name={`metaFields.${index}.value` as const}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Value</FormLabel>
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-														<FormMessage />
-													</FormItem>
-												)}
-											/>
-											<div className="flex items-end">
-												<Button
-													type="button"
-													variant="ghost"
-													onClick={() => metaFieldsArray.remove(index)}
-													disabled={metaFieldsArray.fields.length === 1}
-												>
-													Remove
-												</Button>
-											</div>
+							<div className="grid gap-6 md:grid-cols-[220px_1fr]">
+								<div className="space-y-3 rounded-lg border border-border bg-muted/10 p-4">
+									<div className="text-xs font-semibold uppercase text-muted-foreground">Progress</div>
+									{STEP_DETAILS.map((step, index) => (
+										<div
+											key={step.label}
+											className={`rounded-md border px-3 py-2 text-sm ${
+												index === stepIndex
+													? "border-primary/40 bg-primary/10 text-primary"
+													: "border-border text-muted-foreground"
+											}`}
+										>
+											<div className="text-xs font-semibold uppercase">{step.label}</div>
+											<div className="text-sm font-medium">{step.title}</div>
 										</div>
 									))}
-									<Button type="button" variant="outline" onClick={() => metaFieldsArray.append(DEFAULT_META_FIELD)}>
-										Add Meta Field
-									</Button>
 								</div>
-							)}
-							{stepIndex === 2 && (
-								<div className="space-y-4">
-									{templatesArray.fields.map((template, index) => (
-										<TemplateFields key={template.id} index={index} />
-									))}
-									<Button type="button" variant="outline" onClick={() => templatesArray.append(DEFAULT_TEMPLATE)}>
-										Add Template
-									</Button>
+								<div className="space-y-5">
+									<div>
+										<div className="text-lg font-semibold">{currentStep.title}</div>
+										<div className="text-sm text-muted-foreground">{currentStep.description}</div>
+									</div>
+									{stepIndex === 0 && (
+										<div className="grid gap-4 md:grid-cols-2">
+											<FormField
+												control={form.control}
+												name="name"
+												rules={{ required: "Showroom name is required" }}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>Name</FormLabel>
+														<FormControl>
+															<Input placeholder="e.g. Riyadh Showroom" {...field} />
+														</FormControl>
+														<FormDescription>Use a clear, recognizable showroom name.</FormDescription>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+											<FormField
+												control={form.control}
+												name="location"
+												rules={{ required: "Location is required" }}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>Location</FormLabel>
+														<FormControl>
+															<Input placeholder="e.g. Saudi Arabia" {...field} />
+														</FormControl>
+														<FormDescription>Provide a city, country, or key area.</FormDescription>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										</div>
+									)}
+									{stepIndex === 1 && (
+										<div className="space-y-4">
+											<div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+												Add details like staffing levels, operating hours, or a key contact number. These fields are
+												optional.
+											</div>
+											{metaFieldsArray.fields.map((field, index) => (
+												<div key={field.id} className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+													<FormField
+														control={form.control}
+														name={`metaFields.${index}.key` as const}
+														render={({ field }) => (
+															<FormItem>
+																<FormLabel>Key</FormLabel>
+																<FormControl>
+																	<Input placeholder="e.g. staff" {...field} />
+																</FormControl>
+																<FormMessage />
+															</FormItem>
+														)}
+													/>
+													<FormField
+														control={form.control}
+														name={`metaFields.${index}.value` as const}
+														render={({ field }) => (
+															<FormItem>
+																<FormLabel>Value</FormLabel>
+																<FormControl>
+																	<Input placeholder="e.g. 60" {...field} />
+																</FormControl>
+																<FormMessage />
+															</FormItem>
+														)}
+													/>
+													<div className="flex items-end">
+														<Button
+															type="button"
+															variant="ghost"
+															onClick={() => metaFieldsArray.remove(index)}
+															disabled={metaFieldsArray.fields.length === 1}
+														>
+															Remove
+														</Button>
+													</div>
+												</div>
+											))}
+											<Button
+												type="button"
+												variant="outline"
+												onClick={() => metaFieldsArray.append(DEFAULT_META_FIELD)}
+											>
+												Add Meta Field
+											</Button>
+										</div>
+									)}
+									{stepIndex === 2 && (
+										<div className="space-y-4">
+											<div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+												Templates help standardize showroom assets. Define at least one template with relevant
+												dimensions.
+											</div>
+											{templatesArray.fields.map((template, index) => (
+												<TemplateFields key={template.id} index={index} />
+											))}
+											<Button type="button" variant="outline" onClick={() => templatesArray.append(DEFAULT_TEMPLATE)}>
+												Add Template
+											</Button>
+										</div>
+									)}
+									{stepIndex === 3 && (
+										<div className="space-y-4">
+											<div className="grid gap-4 md:grid-cols-2">
+												<div className="rounded-md border border-border bg-muted/20 p-4">
+													<div className="text-xs font-semibold uppercase text-muted-foreground">Basics</div>
+													<div className="mt-3 space-y-1 text-sm">
+														<div>
+															<span className="text-muted-foreground">Name: </span>
+															<span className="font-medium">{watchedValues.name || "—"}</span>
+														</div>
+														<div>
+															<span className="text-muted-foreground">Location: </span>
+															<span className="font-medium">{watchedValues.location || "—"}</span>
+														</div>
+													</div>
+												</div>
+												<div className="rounded-md border border-border bg-muted/20 p-4">
+													<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
+													{reviewMetaFields.length ? (
+														<div className="mt-3 flex flex-wrap gap-2">
+															{reviewMetaFields.map((field, index) => (
+																<Badge key={`${field.key}-${index}`} variant="secondary">
+																	{field.key}: {field.value}
+																</Badge>
+															))}
+														</div>
+													) : (
+														<div className="mt-2 text-sm text-muted-foreground">No meta fields added.</div>
+													)}
+												</div>
+											</div>
+											<div className="rounded-md border border-border bg-muted/20 p-4">
+												<div className="text-xs font-semibold uppercase text-muted-foreground">Templates</div>
+												{reviewTemplates.length ? (
+													<div className="mt-3 space-y-3 text-sm">
+														{reviewTemplates.map((template, index) => (
+															<div key={`${template.name}-${index}`} className="space-y-1">
+																<div className="font-medium">{template.name || `Template ${index + 1}`}</div>
+																{template.description && (
+																	<div className="text-xs text-muted-foreground">{template.description}</div>
+																)}
+																{template.sizes?.length ? (
+																	<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+																		{template.sizes.map((size, sizeIndex) => (
+																			<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
+																				{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
+																			</Badge>
+																		))}
+																	</div>
+																) : (
+																	<div className="text-xs text-muted-foreground">No sizes configured.</div>
+																)}
+															</div>
+														))}
+													</div>
+												) : (
+													<div className="mt-2 text-sm text-muted-foreground">No templates added.</div>
+												)}
+											</div>
+										</div>
+									)}
 								</div>
-							)}
+							</div>
 							<DialogFooter className="gap-2">
 								<Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
 									Cancel
@@ -610,10 +852,7 @@ export default function ShowroomsPage() {
 										Create Showroom
 									</Button>
 								) : (
-									<Button
-										type="button"
-										onClick={() => setStepIndex((prev) => Math.min(prev + 1, STEP_LABELS.length - 1))}
-									>
+									<Button type="button" onClick={handleNextStep}>
 										Next
 									</Button>
 								)}
