@@ -501,18 +501,6 @@ export default function AssetsPage() {
 					</div>
 				),
 			},
-			{
-				title: "File",
-				dataIndex: "fileName",
-				key: "fileName",
-				width: 260,
-				render: (_: string, record: FileAssetRow) => (
-					<div className="text-xs text-muted-foreground">
-						<div>{record.fileName}</div>
-						<div className="truncate">{record.fileUrl}</div>
-					</div>
-				),
-			},
 			{ title: "Size", dataIndex: "fileSize", key: "fileSize", width: 120 },
 			{
 				title: "Updated",
@@ -677,7 +665,7 @@ export default function AssetsPage() {
 		const formData = new FormData();
 		uploadFiles.forEach((file) => {
 			if (file.originFileObj) {
-				formData.append("file", file.originFileObj);
+				formData.append("files", file.originFileObj);
 			}
 		});
 		try {
@@ -1176,7 +1164,6 @@ export default function AssetsPage() {
 																	<Icon icon={`local:${fileThumb}`} size={28} />
 																</div>
 																<div className="space-y-1">
-																	<div className="text-sm font-semibold text-foreground">{fileName}</div>
 																	<div className="text-xs text-muted-foreground">{filePath}</div>
 																</div>
 															</div>
