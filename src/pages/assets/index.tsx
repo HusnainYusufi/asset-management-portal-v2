@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { toast } from "sonner";
 
 import apiClient from "@/api/apiClient";
+import { Upload } from "@/components/upload";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -12,6 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
+import { fBytes } from "@/utils/format-number";
 import { useFieldArray, useForm } from "react-hook-form";
 
 type AssetField = {
@@ -42,6 +45,14 @@ type AssetApiResponse = {
 	};
 };
 
+type CreateAssetApiResponse = {
+	statusCode: number;
+	message: string;
+	data: {
+		asset: AssetApiItem;
+	};
+};
+
 type AssetDetailApiResponse = {
 	statusCode: number;
 	message: string;
@@ -56,9 +67,6 @@ type AssetFormValues = {
 	tags: string;
 	assetKind: "TEXT" | "FILE";
 	fields: AssetField[];
-	fileName: string;
-	fileUrl: string;
-	fileSize: string;
 };
 
 type TextAssetRow = {
@@ -114,9 +122,6 @@ const DEFAULT_FORM_VALUES: AssetFormValues = {
 	tags: "",
 	assetKind: "TEXT",
 	fields: [EMPTY_FIELD],
-	fileName: "",
-	fileUrl: "",
-	fileSize: "",
 };
 
 const EXAMPLE_FORM_VALUES: AssetFormValues = {
@@ -129,9 +134,6 @@ const EXAMPLE_FORM_VALUES: AssetFormValues = {
 		{ key: "password", type: "PASSWORD", value: "SecretPass123!", isSecret: true },
 		{ key: "portal", type: "URL", value: "https://example.com", isSecret: false },
 	],
-	fileName: "",
-	fileUrl: "",
-	fileSize: "",
 };
 
 const MOCK_FILE_ASSETS: FileAssetRow[] = [
@@ -165,6 +167,16 @@ const parseTags = (value: string) =>
 
 const createId = () => Math.random().toString(36).slice(2, 10);
 
+const summarizeFiles = (files: UploadFile[]) => {
+	if (!files.length) {
+		return { fileName: "-", totalSize: "-" };
+	}
+	const [firstFile, ...rest] = files;
+	const fileName = rest.length ? `${firstFile.name} +${rest.length} more` : firstFile.name;
+	const totalSize = fBytes(files.reduce((sum, file) => sum + (typeof file.size === "number" ? file.size : 0), 0));
+	return { fileName, totalSize };
+};
+
 const formatDate = (value?: string) => {
 	if (!value) return "-";
 	const date = new Date(value);
@@ -195,6 +207,7 @@ export default function AssetsPage() {
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -484,8 +497,21 @@ export default function AssetsPage() {
 		form.reset(EXAMPLE_FORM_VALUES);
 	};
 
+	const handleUploadChange = ({ fileList }: UploadChangeParam) => {
+		setUploadFiles(
+			fileList.map((file) => ({
+				...file,
+				status: file.status ?? "done",
+			})),
+		);
+	};
+
 	const handleSubmit = async (values: AssetFormValues) => {
 		const tags = parseTags(values.tags);
+		if (values.assetKind === "FILE" && uploadFiles.length === 0) {
+			toast.error("Please attach at least one file", { position: "top-center" });
+			return;
+		}
 		const payload = {
 			name: values.name,
 			type: values.type,
@@ -503,8 +529,17 @@ export default function AssetsPage() {
 			tags,
 		};
 
+		let createdAsset: AssetApiItem | undefined;
 		try {
-			await apiClient.post({ url: "/assets", data: payload });
+			const response = await apiClient.post<CreateAssetApiResponse | { asset?: AssetApiItem }>({
+				url: "/assets",
+				data: payload,
+			});
+			if (response && typeof response === "object" && "data" in response) {
+				createdAsset = response.data?.asset;
+			} else if (response && typeof response === "object" && "asset" in response) {
+				createdAsset = response.asset;
+			}
 		} catch (error) {
 			console.error(error);
 			toast.error("Failed to create asset", { position: "top-center" });
@@ -512,20 +547,42 @@ export default function AssetsPage() {
 		}
 
 		if (values.assetKind === "FILE") {
+			if (!createdAsset?.id) {
+				toast.error("Asset created but missing ID for file upload", { position: "top-center" });
+				return;
+			}
+			const formData = new FormData();
+			uploadFiles.forEach((file) => {
+				if (file.originFileObj) {
+					formData.append("Files", file.originFileObj);
+				}
+			});
+			try {
+				await apiClient.post({
+					url: `/assets/${createdAsset.id}/files`,
+					data: formData,
+					headers: { "Content-Type": "multipart/form-data" },
+				});
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to upload asset files", { position: "top-center" });
+				return;
+			}
+			const { fileName, totalSize } = summarizeFiles(uploadFiles);
 			const newFileAsset: FileAssetRow = {
-				id: createId(),
-				name: values.name || values.fileName || "Untitled File Asset",
+				id: createdAsset.id,
+				name: values.name || "Untitled File Asset",
 				type: values.type || "FILE",
 				tags,
-				fileName: values.fileName || "untitled.file",
-				fileUrl: values.fileUrl || "-",
-				fileSize: values.fileSize || "-",
+				fileName,
+				fileUrl: "Uploaded",
+				fileSize: totalSize,
 				lastUpdated: new Date().toISOString().slice(0, 10),
 			};
 			setFileAssets((prev) => [newFileAsset, ...prev]);
 		} else {
 			const newTextAsset: TextAssetRow = {
-				id: createId(),
+				id: createdAsset?.id ?? createId(),
 				name: values.name || "Untitled Text Asset",
 				type: values.type || "TEXT",
 				tenantId: "-",
@@ -539,6 +596,7 @@ export default function AssetsPage() {
 		}
 		toast.success("Asset created", { position: "top-center" });
 		form.reset(DEFAULT_FORM_VALUES);
+		setUploadFiles([]);
 		setIsDialogOpen(false);
 	};
 
@@ -663,43 +721,16 @@ export default function AssetsPage() {
 							</div>
 
 							{assetKind === "FILE" && (
-								<div className="grid gap-4 md:grid-cols-3">
-									<FormField
-										control={form.control}
-										name="fileName"
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>File Name</FormLabel>
-												<FormControl>
-													<Input placeholder="vendor-contract.pdf" {...field} />
-												</FormControl>
-											</FormItem>
-										)}
+								<div className="space-y-3">
+									<div className="text-sm font-semibold">Upload files</div>
+									<Upload
+										multiple
+										fileList={uploadFiles}
+										onChange={handleUploadChange}
+										beforeUpload={() => false}
+										thumbnail
 									/>
-									<FormField
-										control={form.control}
-										name="fileUrl"
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>File URL</FormLabel>
-												<FormControl>
-													<Input placeholder="https://example.com/file.pdf" {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name="fileSize"
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>File Size</FormLabel>
-												<FormControl>
-													<Input placeholder="2.4 MB" {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
+									<div className="text-xs text-muted-foreground">Files are uploaded after the asset is created.</div>
 								</div>
 							)}
 
