@@ -5,7 +5,9 @@ import { Table } from "antd";
 import { toast } from "sonner";
 
 import apiClient from "@/api/apiClient";
+import { Icon } from "@/components/icon";
 import { Upload } from "@/components/upload";
+import { getFileThumb } from "@/components/upload/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -172,7 +174,14 @@ const formatDate = (value?: string) => {
 };
 
 const buildFileUrl = (file: AssetFile) => {
-	if (file.url) return file.url;
+	if (file.url) {
+		if (file.url.startsWith("http://") || file.url.startsWith("https://")) {
+			return file.url;
+		}
+		const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
+		const relativeUrl = file.url.startsWith("/") ? file.url : `/${file.url}`;
+		return `${baseUrl}${relativeUrl}`;
+	}
 	if (!file.relativePath) return "";
 	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
 	const relativePath = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
@@ -199,13 +208,14 @@ const mapFileAsset = (asset: AssetApiItem): FileAssetRow => {
 	}));
 	const { fileName, totalSize } = summarizeFiles(summaryFiles);
 	const firstFile = asset.files?.[0];
+	const firstFileUrl = firstFile ? buildFileUrl(firstFile) : "";
 	return {
 		id: asset.id,
 		name: asset.name,
 		type: asset.type,
 		tags: asset.tags ?? [],
 		fileName: fileName === "-" ? "No files uploaded" : fileName,
-		fileUrl: firstFile?.url ?? "-",
+		fileUrl: firstFileUrl || "-",
 		fileSize: totalSize === "-" ? "-" : totalSize,
 		lastUpdated: asset.updatedAt ?? asset.createdAt,
 	};
@@ -219,6 +229,7 @@ export default function AssetsPage() {
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+	const [viewMode, setViewMode] = useState<"DETAILS" | "GALLERY">("DETAILS");
 	const [viewAsset, setViewAsset] = useState<ViewAssetDetail | null>(null);
 	const [isViewLoading, setIsViewLoading] = useState(false);
 	const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
@@ -260,8 +271,14 @@ export default function AssetsPage() {
 	}, []);
 
 	const handleViewAsset = useCallback(
-		async (assetId: string, assetKind: "TEXT" | "FILE", _asset?: TextAssetRow | FileAssetRow) => {
+		async (
+			assetId: string,
+			assetKind: "TEXT" | "FILE",
+			_viewMode: "DETAILS" | "GALLERY" = "DETAILS",
+			_asset?: TextAssetRow | FileAssetRow,
+		) => {
 			setIsViewDialogOpen(true);
+			setViewMode(_viewMode);
 			setViewAsset(null);
 			setIsViewLoading(true);
 			setRevealedFields({});
@@ -430,7 +447,7 @@ export default function AssetsPage() {
 							type="button"
 							variant="secondary"
 							size="sm"
-							onClick={() => handleViewAsset(record.id, "TEXT", record)}
+							onClick={() => handleViewAsset(record.id, "TEXT", "DETAILS", record)}
 						>
 							View
 						</Button>
@@ -508,7 +525,7 @@ export default function AssetsPage() {
 			{
 				title: "Actions",
 				key: "actions",
-				width: 220,
+				width: 280,
 				render: (_: string, record: FileAssetRow) => (
 					<div className="flex flex-wrap gap-2">
 						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
@@ -518,9 +535,17 @@ export default function AssetsPage() {
 							type="button"
 							variant="secondary"
 							size="sm"
-							onClick={() => handleViewAsset(record.id, "FILE", record)}
+							onClick={() => handleViewAsset(record.id, "FILE", "DETAILS", record)}
 						>
 							View
+						</Button>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={() => handleViewAsset(record.id, "FILE", "GALLERY", record)}
+						>
+							Gallery
 						</Button>
 						<Button type="button" variant="outline" size="sm" onClick={() => handleRequestUpload(record)}>
 							Upload files
@@ -718,6 +743,7 @@ export default function AssetsPage() {
 	const totalAssets = assetView === "TEXT" ? textAssets.length : fileAssets.length;
 	const visibleAssets = assetView === "TEXT" ? filteredTextAssets.length : filteredFileAssets.length;
 	const assetFiles = viewAsset?.kind === "FILE" ? (viewAsset.files ?? []) : [];
+	const isGalleryView = viewMode === "GALLERY" && viewAsset?.kind === "FILE";
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -1026,52 +1052,56 @@ export default function AssetsPage() {
 						<div className="py-8 text-center text-sm text-muted-foreground">Loading asset details...</div>
 					) : viewAsset ? (
 						<div className="space-y-6 text-sm">
-							<div className="space-y-2">
-								<div className="text-lg font-semibold text-foreground">{viewAsset.name}</div>
-								<div className="text-xs text-muted-foreground">ID: {viewAsset.id}</div>
-								<div className="flex flex-wrap gap-2">
-									{viewAsset.tags.length ? (
-										viewAsset.tags.map((tag) => (
-											<Badge key={tag} variant="secondary">
-												{tag}
-											</Badge>
-										))
-									) : (
-										<span className="text-xs text-muted-foreground">No tags</span>
-									)}
-								</div>
-							</div>
-							<div className="grid gap-3 rounded-md border p-4 sm:grid-cols-2">
-								<div>
-									<div className="text-xs uppercase text-muted-foreground">Type</div>
-									<div className="font-medium">{viewAsset.type || "-"}</div>
-								</div>
-								<div>
-									<div className="text-xs uppercase text-muted-foreground">Last updated</div>
-									<div className="font-medium">{formatDate(viewAsset.updatedAt)}</div>
-								</div>
-								{viewAsset.kind === "TEXT" ? (
-									<div>
-										<div className="text-xs uppercase text-muted-foreground">Created</div>
-										<div className="font-medium">{formatDate(viewAsset.createdAt)}</div>
+							{!isGalleryView && (
+								<>
+									<div className="space-y-2">
+										<div className="text-lg font-semibold text-foreground">{viewAsset.name}</div>
+										<div className="text-xs text-muted-foreground">ID: {viewAsset.id}</div>
+										<div className="flex flex-wrap gap-2">
+											{viewAsset.tags.length ? (
+												viewAsset.tags.map((tag) => (
+													<Badge key={tag} variant="secondary">
+														{tag}
+													</Badge>
+												))
+											) : (
+												<span className="text-xs text-muted-foreground">No tags</span>
+											)}
+										</div>
 									</div>
-								) : (
-									<>
+									<div className="grid gap-3 rounded-md border p-4 sm:grid-cols-2">
 										<div>
-											<div className="text-xs uppercase text-muted-foreground">File name</div>
-											<div className="font-medium">{viewAsset.fileName || "-"}</div>
+											<div className="text-xs uppercase text-muted-foreground">Type</div>
+											<div className="font-medium">{viewAsset.type || "-"}</div>
 										</div>
 										<div>
-											<div className="text-xs uppercase text-muted-foreground">File size</div>
-											<div className="font-medium">{viewAsset.fileSize || "-"}</div>
+											<div className="text-xs uppercase text-muted-foreground">Last updated</div>
+											<div className="font-medium">{formatDate(viewAsset.updatedAt)}</div>
 										</div>
-										<div className="sm:col-span-2">
-											<div className="text-xs uppercase text-muted-foreground">File URL</div>
-											<div className="break-all font-medium">{viewAsset.fileUrl || "-"}</div>
-										</div>
-									</>
-								)}
-							</div>
+										{viewAsset.kind === "TEXT" ? (
+											<div>
+												<div className="text-xs uppercase text-muted-foreground">Created</div>
+												<div className="font-medium">{formatDate(viewAsset.createdAt)}</div>
+											</div>
+										) : (
+											<>
+												<div>
+													<div className="text-xs uppercase text-muted-foreground">File name</div>
+													<div className="font-medium">{viewAsset.fileName || "-"}</div>
+												</div>
+												<div>
+													<div className="text-xs uppercase text-muted-foreground">File size</div>
+													<div className="font-medium">{viewAsset.fileSize || "-"}</div>
+												</div>
+												<div className="sm:col-span-2">
+													<div className="text-xs uppercase text-muted-foreground">File URL</div>
+													<div className="break-all font-medium">{viewAsset.fileUrl || "-"}</div>
+												</div>
+											</>
+										)}
+									</div>
+								</>
+							)}
 							{viewAsset.kind === "TEXT" && (
 								<div className="space-y-3">
 									<div className="text-sm font-semibold">Fields</div>
@@ -1123,7 +1153,7 @@ export default function AssetsPage() {
 							{viewAsset.kind === "FILE" && (
 								<div className="space-y-4">
 									<div className="flex items-center justify-between">
-										<div className="text-sm font-semibold">Asset files</div>
+										<div className="text-sm font-semibold">{isGalleryView ? "Asset gallery" : "Asset files"}</div>
 										<div className="text-xs text-muted-foreground">{assetFiles.length} files</div>
 									</div>
 									{assetFiles.length ? (
@@ -1133,6 +1163,7 @@ export default function AssetsPage() {
 												const fileName = getFileDisplayName(file);
 												const filePath = file.relativePath ?? file.url ?? "-";
 												const isImage = file.mimeType?.startsWith("image/");
+												const fileThumb = getFileThumb(fileName);
 
 												return (
 													<div
@@ -1140,9 +1171,14 @@ export default function AssetsPage() {
 														className="flex flex-col gap-3 rounded-lg border bg-background p-4 shadow-sm"
 													>
 														<div className="flex items-start justify-between gap-3">
-															<div>
-																<div className="text-sm font-semibold text-foreground">{fileName}</div>
-																<div className="text-xs text-muted-foreground">{filePath}</div>
+															<div className="flex items-start gap-3">
+																<div className="rounded-md border bg-muted/30 p-2">
+																	<Icon icon={`local:${fileThumb}`} size={28} />
+																</div>
+																<div className="space-y-1">
+																	<div className="text-sm font-semibold text-foreground">{fileName}</div>
+																	<div className="text-xs text-muted-foreground">{filePath}</div>
+																</div>
 															</div>
 															<Badge variant="secondary">{file.mimeType ?? "File"}</Badge>
 														</div>
