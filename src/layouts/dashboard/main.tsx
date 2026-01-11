@@ -33,8 +33,10 @@ const Main = () => {
 	const { pathname } = useLocation();
 	const currentNavAuth = findAuthByPath(pathname);
 
+	const authBase = GLOBAL_CONFIG.routerMode === "frontend" ? "role" : "permission";
+
 	return (
-		<AuthGuard checkAny={currentNavAuth} fallback={<Page403 />}>
+		<AuthGuard checkAny={currentNavAuth} fallback={<Page403 />} baseOn={authBase}>
 			<main
 				data-slot="slash-layout-main"
 				className={cn(
