@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { toast } from "sonner";
@@ -21,6 +21,27 @@ type AssetField = {
 	isSecret: boolean;
 };
 
+type AssetApiItem = {
+	id: string;
+	name: string;
+	type: string;
+	tenantId: string;
+	clientId: string;
+	tags: string[];
+	fields: AssetField[];
+	files: unknown[];
+	createdAt: string;
+	updatedAt: string;
+};
+
+type AssetApiResponse = {
+	statusCode: number;
+	message: string;
+	data: {
+		assets: AssetApiItem[];
+	};
+};
+
 type AssetFormValues = {
 	name: string;
 	type: string;
@@ -36,9 +57,12 @@ type TextAssetRow = {
 	id: string;
 	name: string;
 	type: string;
+	tenantId: string;
+	clientId: string;
 	tags: string[];
 	fields: AssetField[];
 	lastUpdated: string;
+	createdAt: string;
 };
 
 type FileAssetRow = {
@@ -80,32 +104,6 @@ const EXAMPLE_FORM_VALUES: AssetFormValues = {
 	fileSize: "",
 };
 
-const MOCK_TEXT_ASSETS: TextAssetRow[] = [
-	{
-		id: "asset-text-1",
-		name: "Tabby Subscription",
-		type: "CREDENTIALS",
-		tags: ["subscription", "tabby"],
-		fields: [
-			{ key: "username", type: "USERNAME", value: "tabby-user", isSecret: false },
-			{ key: "password", type: "PASSWORD", value: "SecretPass123!", isSecret: true },
-			{ key: "portal", type: "URL", value: "https://example.com", isSecret: false },
-		],
-		lastUpdated: "2026-01-11",
-	},
-	{
-		id: "asset-text-2",
-		name: "Notion Workspace",
-		type: "API_TOKEN",
-		tags: ["docs", "workspace"],
-		fields: [
-			{ key: "token", type: "TOKEN", value: "notion_live_****", isSecret: true },
-			{ key: "workspace", type: "TEXT", value: "Operations", isSecret: false },
-		],
-		lastUpdated: "2026-01-08",
-	},
-];
-
 const MOCK_FILE_ASSETS: FileAssetRow[] = [
 	{
 		id: "asset-file-1",
@@ -137,11 +135,31 @@ const parseTags = (value: string) =>
 
 const createId = () => Math.random().toString(36).slice(2, 10);
 
+const formatDate = (value?: string) => {
+	if (!value) return "-";
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return "-";
+	return date.toISOString().slice(0, 10);
+};
+
+const mapApiAsset = (asset: AssetApiItem): TextAssetRow => ({
+	id: asset.id,
+	name: asset.name,
+	type: asset.type,
+	tenantId: asset.tenantId,
+	clientId: asset.clientId,
+	tags: asset.tags ?? [],
+	fields: asset.fields ?? [],
+	createdAt: asset.createdAt,
+	lastUpdated: asset.updatedAt ?? asset.createdAt,
+});
+
 export default function AssetsPage() {
-	const [textAssets, setTextAssets] = useState<TextAssetRow[]>(MOCK_TEXT_ASSETS);
+	const [textAssets, setTextAssets] = useState<TextAssetRow[]>([]);
 	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>(MOCK_FILE_ASSETS);
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -151,9 +169,37 @@ export default function AssetsPage() {
 	});
 	const assetKind = form.watch("assetKind");
 
+	useEffect(() => {
+		const loadAssets = async () => {
+			setIsLoading(true);
+			try {
+				const response = await apiClient.get<AssetApiResponse>({ url: "/assets" });
+				const assets = response.data?.assets ?? [];
+				setTextAssets(assets.map(mapApiAsset));
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to load assets", { position: "top-center" });
+			} finally {
+				setIsLoading(false);
+			}
+		};
+		loadAssets();
+	}, []);
+
 	const textColumns = useMemo<ColumnsType<TextAssetRow>>(
 		() => [
-			{ title: "Name", dataIndex: "name", key: "name", width: 200 },
+			{
+				title: "Asset",
+				dataIndex: "name",
+				key: "name",
+				width: 240,
+				render: (_: string, record: TextAssetRow) => (
+					<div className="space-y-1">
+						<div className="text-sm font-semibold text-foreground">{record.name}</div>
+						<div className="text-xs text-muted-foreground">ID: {record.id}</div>
+					</div>
+				),
+			},
 			{ title: "Type", dataIndex: "type", key: "type", width: 160 },
 			{
 				title: "Tags",
@@ -174,15 +220,50 @@ export default function AssetsPage() {
 				title: "Fields",
 				dataIndex: "fields",
 				key: "fields",
-				width: 220,
+				width: 320,
 				render: (fields: AssetField[]) => (
-					<div className="text-xs text-muted-foreground">
-						<div>{fields.length} fields</div>
-						<div className="truncate">{fields.map((field) => field.key).join(", ")}</div>
+					<div className="space-y-2 text-xs text-muted-foreground">
+						<div className="flex items-center justify-between">
+							<span>{fields.length} fields</span>
+							<span className="text-[10px] uppercase tracking-wide text-muted-foreground">Preview</span>
+						</div>
+						<div className="space-y-1">
+							{fields.map((field, index) => (
+								<div
+									key={`${field.key}-${field.type}-${index}`}
+									className="flex items-center justify-between gap-3"
+								>
+									<span className="truncate text-foreground">{field.key || "Untitled"}</span>
+									<span className="truncate">
+										{field.isSecret ? "••••••" : field.value || "-"}
+									</span>
+								</div>
+							))}
+						</div>
 					</div>
 				),
 			},
-			{ title: "Updated", dataIndex: "lastUpdated", key: "lastUpdated", width: 140 },
+			{
+				title: "Tenant",
+				dataIndex: "tenantId",
+				key: "tenantId",
+				width: 220,
+				render: (value: string) => <span className="text-xs text-muted-foreground">{value}</span>,
+			},
+			{
+				title: "Client",
+				dataIndex: "clientId",
+				key: "clientId",
+				width: 220,
+				render: (value: string) => <span className="text-xs text-muted-foreground">{value}</span>,
+			},
+			{
+				title: "Updated",
+				dataIndex: "lastUpdated",
+				key: "lastUpdated",
+				width: 140,
+				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
+			},
 		],
 		[],
 	);
@@ -282,8 +363,11 @@ export default function AssetsPage() {
 				id: createId(),
 				name: values.name || "Untitled Text Asset",
 				type: values.type || "TEXT",
+				tenantId: "-",
+				clientId: "-",
 				tags,
 				fields: values.fields.filter((field) => field.key || field.value),
+				createdAt: new Date().toISOString(),
 				lastUpdated: new Date().toISOString().slice(0, 10),
 			};
 			setTextAssets((prev) => [newTextAsset, ...prev]);
@@ -326,6 +410,8 @@ export default function AssetsPage() {
 							size="small"
 							scroll={{ x: "max-content" }}
 							pagination={false}
+							loading={isLoading}
+							locale={{ emptyText: "No assets found" }}
 							columns={assetView === "TEXT" ? textColumns : fileColumns}
 							dataSource={assetView === "TEXT" ? textAssets : fileAssets}
 						/>
