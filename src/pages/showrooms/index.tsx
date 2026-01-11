@@ -641,22 +641,25 @@ export default function ShowroomsPage() {
 			</CardContent>
 
 			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
-				<DialogContent className="max-w-4xl">
-					<DialogHeader>
-						<DialogTitle>Create Showroom</DialogTitle>
+				<DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
+						<DialogTitle className="text-2xl font-semibold">Create Showroom</DialogTitle>
+						<div className="text-sm text-muted-foreground">
+							Follow the guided steps to build a complete showroom profile.
+						</div>
 					</DialogHeader>
 					<Form {...form}>
-						<form className="space-y-6" onSubmit={form.handleSubmit(handleCreateShowroom)}>
-							<div className="grid gap-6 md:grid-cols-[220px_1fr]">
-								<div className="space-y-3 rounded-lg border border-border bg-muted/10 p-4">
+						<form className="space-y-8 px-8 py-6" onSubmit={form.handleSubmit(handleCreateShowroom)}>
+							<div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+								<div className="space-y-3 rounded-xl border border-border bg-muted/30 p-5 shadow-sm">
 									<div className="text-xs font-semibold uppercase text-muted-foreground">Progress</div>
 									{STEP_DETAILS.map((step, index) => (
 										<div
 											key={step.label}
-											className={`rounded-md border px-3 py-2 text-sm ${
+											className={`rounded-lg border px-3 py-3 text-sm transition ${
 												index === stepIndex
-													? "border-primary/40 bg-primary/10 text-primary"
-													: "border-border text-muted-foreground"
+													? "border-primary/40 bg-primary/15 text-primary shadow-sm"
+													: "border-border text-muted-foreground hover:border-primary/30"
 											}`}
 										>
 											<div className="text-xs font-semibold uppercase">{step.label}</div>
@@ -664,9 +667,9 @@ export default function ShowroomsPage() {
 										</div>
 									))}
 								</div>
-								<div className="space-y-5">
+								<div className="space-y-6">
 									<div>
-										<div className="text-lg font-semibold">{currentStep.title}</div>
+										<div className="text-xl font-semibold">{currentStep.title}</div>
 										<div className="text-sm text-muted-foreground">{currentStep.description}</div>
 									</div>
 									{stepIndex === 0 && (
@@ -835,7 +838,7 @@ export default function ShowroomsPage() {
 									)}
 								</div>
 							</div>
-							<DialogFooter className="gap-2">
+							<DialogFooter className="gap-2 border-t border-border px-8 py-6">
 								<Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
 									Cancel
 								</Button>
