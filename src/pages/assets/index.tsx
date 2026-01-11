@@ -201,12 +201,15 @@ export default function AssetsPage() {
 	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>(MOCK_FILE_ASSETS);
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 	const [viewAsset, setViewAsset] = useState<ViewAssetDetail | null>(null);
 	const [isViewLoading, setIsViewLoading] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [isUploading, setIsUploading] = useState(false);
+	const [uploadTarget, setUploadTarget] = useState<FileAssetRow | null>(null);
 	const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
@@ -304,6 +307,11 @@ export default function AssetsPage() {
 	const handleRequestDelete = useCallback((asset: DeleteTarget) => {
 		setDeleteTarget(asset);
 		setIsDeleteDialogOpen(true);
+	}, []);
+
+	const handleRequestUpload = useCallback((asset: FileAssetRow) => {
+		setUploadTarget(asset);
+		setIsUploadDialogOpen(true);
 	}, []);
 
 	const handleConfirmDelete = useCallback(async () => {
@@ -468,6 +476,9 @@ export default function AssetsPage() {
 						>
 							View
 						</Button>
+						<Button type="button" variant="outline" size="sm" onClick={() => handleRequestUpload(record)}>
+							Upload files
+						</Button>
 						<Button
 							type="button"
 							variant="destructive"
@@ -480,7 +491,7 @@ export default function AssetsPage() {
 				),
 			},
 		],
-		[handleEditAsset, handleRequestDelete, handleViewAsset],
+		[handleEditAsset, handleRequestDelete, handleRequestUpload, handleViewAsset],
 	);
 
 	const handleAddField = () => {
@@ -508,10 +519,6 @@ export default function AssetsPage() {
 
 	const handleSubmit = async (values: AssetFormValues) => {
 		const tags = parseTags(values.tags);
-		if (values.assetKind === "FILE" && uploadFiles.length === 0) {
-			toast.error("Please attach at least one file", { position: "top-center" });
-			return;
-		}
 		const payload = {
 			name: values.name,
 			type: values.type,
@@ -547,36 +554,14 @@ export default function AssetsPage() {
 		}
 
 		if (values.assetKind === "FILE") {
-			if (!createdAsset?.id) {
-				toast.error("Asset created but missing ID for file upload", { position: "top-center" });
-				return;
-			}
-			const formData = new FormData();
-			uploadFiles.forEach((file) => {
-				if (file.originFileObj) {
-					formData.append("Files", file.originFileObj);
-				}
-			});
-			try {
-				await apiClient.post({
-					url: `/assets/${createdAsset.id}/files`,
-					data: formData,
-					headers: { "Content-Type": "multipart/form-data" },
-				});
-			} catch (error) {
-				console.error(error);
-				toast.error("Failed to upload asset files", { position: "top-center" });
-				return;
-			}
-			const { fileName, totalSize } = summarizeFiles(uploadFiles);
 			const newFileAsset: FileAssetRow = {
-				id: createdAsset.id,
+				id: createdAsset?.id ?? createId(),
 				name: values.name || "Untitled File Asset",
 				type: values.type || "FILE",
 				tags,
-				fileName,
-				fileUrl: "Uploaded",
-				fileSize: totalSize,
+				fileName: "No files uploaded",
+				fileUrl: "-",
+				fileSize: "-",
 				lastUpdated: new Date().toISOString().slice(0, 10),
 			};
 			setFileAssets((prev) => [newFileAsset, ...prev]);
@@ -596,8 +581,53 @@ export default function AssetsPage() {
 		}
 		toast.success("Asset created", { position: "top-center" });
 		form.reset(DEFAULT_FORM_VALUES);
-		setUploadFiles([]);
 		setIsDialogOpen(false);
+	};
+
+	const handleConfirmUpload = async () => {
+		if (!uploadTarget) return;
+		if (uploadFiles.length === 0) {
+			toast.error("Please attach at least one file", { position: "top-center" });
+			return;
+		}
+		setIsUploading(true);
+		const formData = new FormData();
+		uploadFiles.forEach((file) => {
+			if (file.originFileObj) {
+				formData.append("file", file.originFileObj);
+			}
+		});
+		try {
+			await apiClient.post({
+				url: `/assets/${uploadTarget.id}/files`,
+				data: formData,
+				headers: { "Content-Type": "multipart/form-data" },
+			});
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to upload asset files", { position: "top-center" });
+			setIsUploading(false);
+			return;
+		}
+		const { fileName, totalSize } = summarizeFiles(uploadFiles);
+		setFileAssets((prev) =>
+			prev.map((asset) =>
+				asset.id === uploadTarget.id
+					? {
+							...asset,
+							fileName,
+							fileUrl: "Uploaded",
+							fileSize: totalSize,
+							lastUpdated: new Date().toISOString().slice(0, 10),
+						}
+					: asset,
+			),
+		);
+		toast.success("Files uploaded", { position: "top-center" });
+		setIsUploading(false);
+		setIsUploadDialogOpen(false);
+		setUploadFiles([]);
+		setUploadTarget(null);
 	};
 
 	return (
@@ -720,20 +750,6 @@ export default function AssetsPage() {
 								/>
 							</div>
 
-							{assetKind === "FILE" && (
-								<div className="space-y-3">
-									<div className="text-sm font-semibold">Upload files</div>
-									<Upload
-										multiple
-										fileList={uploadFiles}
-										onChange={handleUploadChange}
-										beforeUpload={() => false}
-										thumbnail
-									/>
-									<div className="text-xs text-muted-foreground">Files are uploaded after the asset is created.</div>
-								</div>
-							)}
-
 							{assetKind === "TEXT" && (
 								<div className="space-y-3">
 									<div className="flex items-center justify-between">
@@ -839,6 +855,52 @@ export default function AssetsPage() {
 							</DialogFooter>
 						</form>
 					</Form>
+				</DialogContent>
+			</Dialog>
+			<Dialog
+				open={isUploadDialogOpen}
+				onOpenChange={(open) => {
+					setIsUploadDialogOpen(open);
+					if (!open) {
+						setUploadFiles([]);
+						setUploadTarget(null);
+						setIsUploading(false);
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>Upload files</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div className="text-sm text-muted-foreground">
+							Uploading to:{" "}
+							<span className="font-medium text-foreground">{uploadTarget?.name ?? "Selected asset"}</span>
+						</div>
+						{isUploading && (
+							<div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+								<span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+								Uploading files...
+							</div>
+						)}
+						<Upload
+							multiple
+							maxCount={5}
+							fileList={uploadFiles}
+							onChange={handleUploadChange}
+							beforeUpload={() => false}
+							thumbnail
+						/>
+						<div className="text-xs text-muted-foreground">Select up to 5 files to upload.</div>
+					</div>
+					<DialogFooter className="mt-6">
+						<Button type="button" variant="outline" onClick={() => setIsUploadDialogOpen(false)} disabled={isUploading}>
+							Cancel
+						</Button>
+						<Button type="button" onClick={handleConfirmUpload} disabled={isUploading}>
+							{isUploading ? "Uploading..." : "Upload files"}
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 			<Dialog
