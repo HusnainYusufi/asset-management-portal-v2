@@ -16,6 +16,9 @@ const navData = GLOBAL_CONFIG.routerMode === "backend" ? backendNavData : fronte
  */
 const filterItems = (items: NavItemDataProps[], permissions: string[]) => {
 	return items.filter((item) => {
+		if (item.hidden) {
+			return false;
+		}
 		// 检查当前项目是否有权限
 		const hasPermission = item.auth ? checkAny(item.auth, permissions) : true;
 
@@ -40,8 +43,8 @@ const filterItems = (items: NavItemDataProps[], permissions: string[]) => {
  * @param permissions 权限列表
  * @returns 过滤后的导航数据
  */
-const filterNavData = (permissions: string[]) => {
-	return navData
+const filterNavData = (data: typeof navData, permissions: string[]) => {
+	return data
 		.map((group) => {
 			// 过滤组内的项目
 			const filteredItems = filterItems(group.items, permissions);
@@ -60,6 +63,18 @@ const filterNavData = (permissions: string[]) => {
 		.filter((group): group is NonNullable<typeof group> => group !== null); // 过滤掉空组
 };
 
+const applyRoleVisibility = (items: NavItemDataProps[], isOwner: boolean): NavItemDataProps[] =>
+	items.map((item) => {
+		const nextItem: NavItemDataProps = {
+			...item,
+			hidden: isOwner && item.path === "/clients" ? true : item.hidden,
+		};
+		if (item.children?.length) {
+			nextItem.children = applyRoleVisibility(item.children, isOwner);
+		}
+		return nextItem;
+	});
+
 /**
  * Hook to get filtered navigation data based on user permissions
  * @returns Filtered navigation data
@@ -69,7 +84,19 @@ export const useFilteredNavData = () => {
 	const roles = useUserRoles();
 	const permissionCodes = useMemo(() => permissions.map((p) => p.code), [permissions]);
 	const roleCodes = useMemo(() => roles.map((role) => role.code), [roles]);
-	const authCodes = useMemo(() => Array.from(new Set([...permissionCodes, ...roleCodes])), [permissionCodes, roleCodes]);
-	const filteredNavData = useMemo(() => filterNavData(authCodes), [authCodes]);
+	const authCodes = useMemo(
+		() => Array.from(new Set([...permissionCodes, ...roleCodes])),
+		[permissionCodes, roleCodes],
+	);
+	const isOwner = useMemo(() => roles.some((role) => role.code === "OWNER" || role.name === "OWNER"), [roles]);
+	const scopedNavData = useMemo(
+		() =>
+			navData.map((group) => ({
+				...group,
+				items: applyRoleVisibility(group.items, isOwner),
+			})),
+		[isOwner],
+	);
+	const filteredNavData = useMemo(() => filterNavData(scopedNavData, authCodes), [authCodes, scopedNavData]);
 	return filteredNavData;
 };
