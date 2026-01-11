@@ -84,6 +84,28 @@ type FileAssetRow = {
 	lastUpdated: string;
 };
 
+type ViewAssetDetail = {
+	kind: "TEXT" | "FILE";
+	id: string;
+	name: string;
+	type: string;
+	tags: string[];
+	tenantId?: string;
+	clientId?: string;
+	createdAt?: string;
+	updatedAt?: string;
+	fields?: AssetField[];
+	fileName?: string;
+	fileUrl?: string;
+	fileSize?: string;
+};
+
+type DeleteTarget = {
+	id: string;
+	kind: "TEXT" | "FILE";
+	name: string;
+};
+
 const EMPTY_FIELD: AssetField = { key: "", type: "TEXT", value: "", isSecret: false };
 
 const DEFAULT_FORM_VALUES: AssetFormValues = {
@@ -167,6 +189,11 @@ export default function AssetsPage() {
 	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>(MOCK_FILE_ASSETS);
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+	const [viewAsset, setViewAsset] = useState<ViewAssetDetail | null>(null);
+	const [isViewLoading, setIsViewLoading] = useState(false);
+	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
@@ -198,16 +225,53 @@ export default function AssetsPage() {
 		toast.info("Edit is not available yet", { position: "top-center" });
 	}, []);
 
-	const handleViewAsset = useCallback(async (assetId: string) => {
-		try {
-			const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
-			const asset = response.data?.asset;
-			toast.success(`Loaded asset details for ${asset?.name ?? assetId}`, { position: "top-center" });
-		} catch (error) {
-			console.error(error);
-			toast.error("Failed to load asset details", { position: "top-center" });
-		}
-	}, []);
+	const handleViewAsset = useCallback(
+		async (assetId: string, assetKind: "TEXT" | "FILE", asset?: TextAssetRow | FileAssetRow) => {
+			setIsViewDialogOpen(true);
+			setViewAsset(null);
+			setIsViewLoading(true);
+			try {
+				if (assetKind === "FILE" && asset && "fileName" in asset) {
+					setViewAsset({
+						kind: "FILE",
+						id: asset.id,
+						name: asset.name,
+						type: asset.type,
+						tags: asset.tags,
+						fileName: asset.fileName,
+						fileUrl: asset.fileUrl,
+						fileSize: asset.fileSize,
+						updatedAt: asset.lastUpdated,
+					});
+				} else {
+					const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
+					const apiAsset = response.data?.asset;
+					if (!apiAsset) {
+						throw new Error("Asset not found");
+					}
+					setViewAsset({
+						kind: "TEXT",
+						id: apiAsset.id,
+						name: apiAsset.name,
+						type: apiAsset.type,
+						tags: apiAsset.tags ?? [],
+						tenantId: apiAsset.tenantId,
+						clientId: apiAsset.clientId,
+						createdAt: apiAsset.createdAt,
+						updatedAt: apiAsset.updatedAt,
+						fields: apiAsset.fields ?? [],
+					});
+				}
+			} catch (error) {
+				console.error(error);
+				setViewAsset(null);
+				toast.error("Failed to load asset details", { position: "top-center" });
+			} finally {
+				setIsViewLoading(false);
+			}
+		},
+		[],
+	);
 
 	const handleDeleteAsset = useCallback(async (assetId: string, assetKind: "TEXT" | "FILE") => {
 		try {
@@ -223,6 +287,18 @@ export default function AssetsPage() {
 			toast.error("Failed to delete asset", { position: "top-center" });
 		}
 	}, []);
+
+	const handleRequestDelete = useCallback((asset: DeleteTarget) => {
+		setDeleteTarget(asset);
+		setIsDeleteDialogOpen(true);
+	}, []);
+
+	const handleConfirmDelete = useCallback(async () => {
+		if (!deleteTarget) return;
+		await handleDeleteAsset(deleteTarget.id, deleteTarget.kind);
+		setIsDeleteDialogOpen(false);
+		setDeleteTarget(null);
+	}, [deleteTarget, handleDeleteAsset]);
 
 	const textColumns = useMemo<ColumnsType<TextAssetRow>>(
 		() => [
@@ -306,17 +382,27 @@ export default function AssetsPage() {
 						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
 							Edit
 						</Button>
-						<Button type="button" variant="secondary" size="sm" onClick={() => handleViewAsset(record.id)}>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={() => handleViewAsset(record.id, "TEXT", record)}
+						>
 							View
 						</Button>
-						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record.id, "TEXT")}>
+						<Button
+							type="button"
+							variant="destructive"
+							size="sm"
+							onClick={() => handleRequestDelete({ id: record.id, kind: "TEXT", name: record.name })}
+						>
 							Delete
 						</Button>
 					</div>
 				),
 			},
 		],
-		[handleDeleteAsset, handleEditAsset, handleViewAsset],
+		[handleEditAsset, handleRequestDelete, handleViewAsset],
 	);
 
 	const fileColumns = useMemo<ColumnsType<FileAssetRow>>(
@@ -361,17 +447,27 @@ export default function AssetsPage() {
 						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
 							Edit
 						</Button>
-						<Button type="button" variant="secondary" size="sm" onClick={() => handleViewAsset(record.id)}>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={() => handleViewAsset(record.id, "FILE", record)}
+						>
 							View
 						</Button>
-						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record.id, "FILE")}>
+						<Button
+							type="button"
+							variant="destructive"
+							size="sm"
+							onClick={() => handleRequestDelete({ id: record.id, kind: "FILE", name: record.name })}
+						>
 							Delete
 						</Button>
 					</div>
 				),
 			},
 		],
-		[handleDeleteAsset, handleEditAsset, handleViewAsset],
+		[handleEditAsset, handleRequestDelete, handleViewAsset],
 	);
 
 	const handleAddField = () => {
@@ -712,6 +808,140 @@ export default function AssetsPage() {
 							</DialogFooter>
 						</form>
 					</Form>
+				</DialogContent>
+			</Dialog>
+			<Dialog
+				open={isViewDialogOpen}
+				onOpenChange={(open) => {
+					setIsViewDialogOpen(open);
+					if (!open) {
+						setViewAsset(null);
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-3xl">
+					<DialogHeader>
+						<DialogTitle>Asset details</DialogTitle>
+					</DialogHeader>
+					{isViewLoading ? (
+						<div className="py-8 text-center text-sm text-muted-foreground">Loading asset details...</div>
+					) : viewAsset ? (
+						<div className="space-y-6 text-sm">
+							<div className="space-y-2">
+								<div className="text-lg font-semibold text-foreground">{viewAsset.name}</div>
+								<div className="text-xs text-muted-foreground">ID: {viewAsset.id}</div>
+								<div className="flex flex-wrap gap-2">
+									{viewAsset.tags.length ? (
+										viewAsset.tags.map((tag) => (
+											<Badge key={tag} variant="secondary">
+												{tag}
+											</Badge>
+										))
+									) : (
+										<span className="text-xs text-muted-foreground">No tags</span>
+									)}
+								</div>
+							</div>
+							<div className="grid gap-3 rounded-md border p-4 sm:grid-cols-2">
+								<div>
+									<div className="text-xs uppercase text-muted-foreground">Type</div>
+									<div className="font-medium">{viewAsset.type || "-"}</div>
+								</div>
+								<div>
+									<div className="text-xs uppercase text-muted-foreground">Last updated</div>
+									<div className="font-medium">{formatDate(viewAsset.updatedAt)}</div>
+								</div>
+								{viewAsset.kind === "TEXT" ? (
+									<>
+										<div>
+											<div className="text-xs uppercase text-muted-foreground">Tenant</div>
+											<div className="font-medium">{viewAsset.tenantId || "-"}</div>
+										</div>
+										<div>
+											<div className="text-xs uppercase text-muted-foreground">Client</div>
+											<div className="font-medium">{viewAsset.clientId || "-"}</div>
+										</div>
+										<div>
+											<div className="text-xs uppercase text-muted-foreground">Created</div>
+											<div className="font-medium">{formatDate(viewAsset.createdAt)}</div>
+										</div>
+									</>
+								) : (
+									<>
+										<div>
+											<div className="text-xs uppercase text-muted-foreground">File name</div>
+											<div className="font-medium">{viewAsset.fileName || "-"}</div>
+										</div>
+										<div>
+											<div className="text-xs uppercase text-muted-foreground">File size</div>
+											<div className="font-medium">{viewAsset.fileSize || "-"}</div>
+										</div>
+										<div className="sm:col-span-2">
+											<div className="text-xs uppercase text-muted-foreground">File URL</div>
+											<div className="break-all font-medium">{viewAsset.fileUrl || "-"}</div>
+										</div>
+									</>
+								)}
+							</div>
+							{viewAsset.kind === "TEXT" && (
+								<div className="space-y-3">
+									<div className="text-sm font-semibold">Fields</div>
+									{viewAsset.fields?.length ? (
+										<div className="space-y-2">
+											{viewAsset.fields.map((field, index) => (
+												<div
+													key={`${field.key}-${field.type}-${index}`}
+													className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs"
+												>
+													<div className="min-w-[120px] font-medium text-foreground">{field.key || "Untitled"}</div>
+													<div className="text-muted-foreground">{field.type}</div>
+													<div className="text-foreground">{field.isSecret ? "••••••" : field.value || "-"}</div>
+												</div>
+											))}
+										</div>
+									) : (
+										<div className="text-xs text-muted-foreground">No fields attached to this asset.</div>
+									)}
+								</div>
+							)}
+						</div>
+					) : (
+						<div className="py-8 text-center text-sm text-muted-foreground">No asset details available.</div>
+					)}
+					<DialogFooter className="mt-6">
+						<Button type="button" variant="outline" onClick={() => setIsViewDialogOpen(false)}>
+							Close
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+			<Dialog
+				open={isDeleteDialogOpen}
+				onOpenChange={(open) => {
+					setIsDeleteDialogOpen(open);
+					if (!open) {
+						setDeleteTarget(null);
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete asset</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-2 text-sm text-muted-foreground">
+						<p>Are you sure you want to delete this asset?</p>
+						<p className="text-foreground">
+							<strong>{deleteTarget?.name ?? "Selected asset"}</strong>
+						</p>
+					</div>
+					<DialogFooter className="mt-6">
+						<Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button type="button" variant="destructive" onClick={handleConfirmDelete}>
+							Yes, delete
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</div>
