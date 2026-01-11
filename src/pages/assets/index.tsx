@@ -32,9 +32,21 @@ type AssetApiItem = {
 	clientId: string;
 	tags: string[];
 	fields: AssetField[];
-	files: unknown[];
+	files: AssetFile[];
 	createdAt: string;
 	updatedAt: string;
+};
+
+type AssetFile = {
+	id: string;
+	filename: string;
+	originalName?: string;
+	relativePath?: string;
+	url?: string;
+	size?: number;
+	mimeType?: string;
+	uploadedBy?: string;
+	uploadedAt?: string;
 };
 
 type AssetApiResponse = {
@@ -136,29 +148,6 @@ const EXAMPLE_FORM_VALUES: AssetFormValues = {
 	],
 };
 
-const MOCK_FILE_ASSETS: FileAssetRow[] = [
-	{
-		id: "asset-file-1",
-		name: "Vendor Contract",
-		type: "PDF",
-		tags: ["legal", "vendor"],
-		fileName: "vendor-contract-2025.pdf",
-		fileUrl: "https://example.com/contracts/vendor-contract-2025.pdf",
-		fileSize: "2.4 MB",
-		lastUpdated: "2026-01-05",
-	},
-	{
-		id: "asset-file-2",
-		name: "Brand Assets",
-		type: "ZIP",
-		tags: ["design", "branding"],
-		fileName: "brand-kit-q1.zip",
-		fileUrl: "https://example.com/brand/brand-kit-q1.zip",
-		fileSize: "38.1 MB",
-		lastUpdated: "2025-12-18",
-	},
-];
-
 const parseTags = (value: string) =>
 	value
 		.split(",")
@@ -196,9 +185,29 @@ const mapApiAsset = (asset: AssetApiItem): TextAssetRow => ({
 	lastUpdated: asset.updatedAt ?? asset.createdAt,
 });
 
+const mapFileAsset = (asset: AssetApiItem): FileAssetRow => {
+	const summaryFiles: UploadFile[] = (asset.files ?? []).map((file) => ({
+		uid: file.id,
+		name: file.originalName ?? file.filename,
+		size: file.size,
+	}));
+	const { fileName, totalSize } = summarizeFiles(summaryFiles);
+	const firstFile = asset.files?.[0];
+	return {
+		id: asset.id,
+		name: asset.name,
+		type: asset.type,
+		tags: asset.tags ?? [],
+		fileName: fileName === "-" ? "No files uploaded" : fileName,
+		fileUrl: firstFile?.url ?? "-",
+		fileSize: totalSize === "-" ? "-" : totalSize,
+		lastUpdated: asset.updatedAt ?? asset.createdAt,
+	};
+};
+
 export default function AssetsPage() {
 	const [textAssets, setTextAssets] = useState<TextAssetRow[]>([]);
-	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>(MOCK_FILE_ASSETS);
+	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>([]);
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -226,7 +235,8 @@ export default function AssetsPage() {
 			try {
 				const response = await apiClient.get<AssetApiResponse>({ url: "/assets" });
 				const assets = response.data?.assets ?? [];
-				setTextAssets(assets.map(mapApiAsset));
+				setTextAssets(assets.filter((asset) => (asset.files ?? []).length === 0).map(mapApiAsset));
+				setFileAssets(assets.filter((asset) => (asset.files ?? []).length > 0).map(mapFileAsset));
 			} catch (error) {
 				console.error(error);
 				toast.error("Failed to load assets", { position: "top-center" });
