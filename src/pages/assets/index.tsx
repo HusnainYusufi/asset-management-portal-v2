@@ -14,6 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
+import { GLOBAL_CONFIG } from "@/global-config";
 import { fBytes } from "@/utils/format-number";
 import { useFieldArray, useForm } from "react-hook-form";
 
@@ -114,6 +115,7 @@ type ViewAssetDetail = {
 	fileName?: string;
 	fileUrl?: string;
 	fileSize?: string;
+	files?: AssetFile[];
 };
 
 type DeleteTarget = {
@@ -168,6 +170,16 @@ const formatDate = (value?: string) => {
 	if (Number.isNaN(date.getTime())) return "-";
 	return date.toISOString().slice(0, 10);
 };
+
+const buildFileUrl = (file: AssetFile) => {
+	if (file.url) return file.url;
+	if (!file.relativePath) return "";
+	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
+	const relativePath = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
+	return `${baseUrl}${relativePath}`;
+};
+
+const getFileDisplayName = (file: AssetFile) => file.originalName ?? file.filename ?? "Untitled file";
 
 const mapApiAsset = (asset: AssetApiItem): TextAssetRow => ({
 	id: asset.id,
@@ -248,30 +260,38 @@ export default function AssetsPage() {
 	}, []);
 
 	const handleViewAsset = useCallback(
-		async (assetId: string, assetKind: "TEXT" | "FILE", asset?: TextAssetRow | FileAssetRow) => {
+		async (assetId: string, assetKind: "TEXT" | "FILE", _asset?: TextAssetRow | FileAssetRow) => {
 			setIsViewDialogOpen(true);
 			setViewAsset(null);
 			setIsViewLoading(true);
 			setRevealedFields({});
 			try {
-				if (assetKind === "FILE" && asset && "fileName" in asset) {
+				const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
+				const apiAsset = response.data?.asset;
+				if (!apiAsset) {
+					throw new Error("Asset not found");
+				}
+				if (assetKind === "FILE") {
+					const files = apiAsset.files ?? [];
+					const summaryFiles: UploadFile[] = files.map((file) => ({
+						uid: file.id,
+						name: getFileDisplayName(file),
+						size: file.size,
+					}));
+					const { fileName, totalSize } = summarizeFiles(summaryFiles);
 					setViewAsset({
 						kind: "FILE",
-						id: asset.id,
-						name: asset.name,
-						type: asset.type,
-						tags: asset.tags,
-						fileName: asset.fileName,
-						fileUrl: asset.fileUrl,
-						fileSize: asset.fileSize,
-						updatedAt: asset.lastUpdated,
+						id: apiAsset.id,
+						name: apiAsset.name,
+						type: apiAsset.type,
+						tags: apiAsset.tags ?? [],
+						fileName: fileName === "-" ? "No files uploaded" : fileName,
+						fileUrl: files[0] ? buildFileUrl(files[0]) || "-" : "-",
+						fileSize: totalSize === "-" ? "-" : totalSize,
+						updatedAt: apiAsset.updatedAt,
+						files,
 					});
 				} else {
-					const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
-					const apiAsset = response.data?.asset;
-					if (!apiAsset) {
-						throw new Error("Asset not found");
-					}
 					setViewAsset({
 						kind: "TEXT",
 						id: apiAsset.id,
@@ -697,6 +717,7 @@ export default function AssetsPage() {
 
 	const totalAssets = assetView === "TEXT" ? textAssets.length : fileAssets.length;
 	const visibleAssets = assetView === "TEXT" ? filteredTextAssets.length : filteredFileAssets.length;
+	const assetFiles = viewAsset?.kind === "FILE" ? (viewAsset.files ?? []) : [];
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -1096,6 +1117,84 @@ export default function AssetsPage() {
 										</div>
 									) : (
 										<div className="text-xs text-muted-foreground">No fields attached to this asset.</div>
+									)}
+								</div>
+							)}
+							{viewAsset.kind === "FILE" && (
+								<div className="space-y-4">
+									<div className="flex items-center justify-between">
+										<div className="text-sm font-semibold">Asset files</div>
+										<div className="text-xs text-muted-foreground">{assetFiles.length} files</div>
+									</div>
+									{assetFiles.length ? (
+										<div className="grid gap-4 sm:grid-cols-2">
+											{assetFiles.map((file) => {
+												const fileUrl = buildFileUrl(file);
+												const fileName = getFileDisplayName(file);
+												const filePath = file.relativePath ?? file.url ?? "-";
+												const isImage = file.mimeType?.startsWith("image/");
+
+												return (
+													<div
+														key={file.id}
+														className="flex flex-col gap-3 rounded-lg border bg-background p-4 shadow-sm"
+													>
+														<div className="flex items-start justify-between gap-3">
+															<div>
+																<div className="text-sm font-semibold text-foreground">{fileName}</div>
+																<div className="text-xs text-muted-foreground">{filePath}</div>
+															</div>
+															<Badge variant="secondary">{file.mimeType ?? "File"}</Badge>
+														</div>
+														{isImage && fileUrl ? (
+															<div className="overflow-hidden rounded-md border">
+																<img src={fileUrl} alt={fileName} className="h-40 w-full object-cover" />
+															</div>
+														) : (
+															<div className="flex h-40 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+																Preview unavailable
+															</div>
+														)}
+														<div className="grid gap-2 text-xs text-muted-foreground">
+															<div className="flex items-center justify-between">
+																<span>Size</span>
+																<span className="text-foreground">{file.size ? fBytes(file.size) : "-"}</span>
+															</div>
+															<div className="flex items-center justify-between">
+																<span>Uploaded</span>
+																<span className="text-foreground">{formatDate(file.uploadedAt)}</span>
+															</div>
+															<div className="flex items-center justify-between">
+																<span>Uploaded by</span>
+																<span className="text-foreground">{file.uploadedBy ?? "-"}</span>
+															</div>
+														</div>
+														<div className="flex flex-wrap gap-2">
+															{fileUrl ? (
+																<Button asChild size="sm">
+																	<a href={fileUrl} target="_blank" rel="noreferrer" download>
+																		Download
+																	</a>
+																</Button>
+															) : (
+																<Button size="sm" variant="outline" disabled>
+																	Download
+																</Button>
+															)}
+															<Button
+																size="sm"
+																variant="secondary"
+																onClick={() => handleCopyField(filePath, "File path")}
+															>
+																Copy path
+															</Button>
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									) : (
+										<div className="text-xs text-muted-foreground">No files attached to this asset.</div>
 									)}
 								</div>
 							)}
