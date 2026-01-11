@@ -85,8 +85,6 @@ type TextAssetRow = {
 	id: string;
 	name: string;
 	type: string;
-	tenantId: string;
-	clientId: string;
 	tags: string[];
 	fields: AssetField[];
 	lastUpdated: string;
@@ -110,8 +108,6 @@ type ViewAssetDetail = {
 	name: string;
 	type: string;
 	tags: string[];
-	tenantId?: string;
-	clientId?: string;
 	createdAt?: string;
 	updatedAt?: string;
 	fields?: AssetField[];
@@ -177,8 +173,6 @@ const mapApiAsset = (asset: AssetApiItem): TextAssetRow => ({
 	id: asset.id,
 	name: asset.name,
 	type: asset.type,
-	tenantId: asset.tenantId,
-	clientId: asset.clientId,
 	tags: asset.tags ?? [],
 	fields: asset.fields ?? [],
 	createdAt: asset.createdAt,
@@ -209,6 +203,7 @@ export default function AssetsPage() {
 	const [textAssets, setTextAssets] = useState<TextAssetRow[]>([]);
 	const [fileAssets, setFileAssets] = useState<FileAssetRow[]>([]);
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
+	const [searchQuery, setSearchQuery] = useState("");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -281,8 +276,6 @@ export default function AssetsPage() {
 						name: apiAsset.name,
 						type: apiAsset.type,
 						tags: apiAsset.tags ?? [],
-						tenantId: apiAsset.tenantId,
-						clientId: apiAsset.clientId,
 						createdAt: apiAsset.createdAt,
 						updatedAt: apiAsset.updatedAt,
 						fields: apiAsset.fields ?? [],
@@ -338,6 +331,7 @@ export default function AssetsPage() {
 				dataIndex: "name",
 				key: "name",
 				width: 240,
+				sorter: (a, b) => a.name.localeCompare(b.name),
 				render: (_: string, record: TextAssetRow) => (
 					<div className="space-y-1">
 						<div className="text-sm font-semibold text-foreground">{record.name}</div>
@@ -345,7 +339,13 @@ export default function AssetsPage() {
 					</div>
 				),
 			},
-			{ title: "Type", dataIndex: "type", key: "type", width: 160 },
+			{
+				title: "Type",
+				dataIndex: "type",
+				key: "type",
+				width: 160,
+				sorter: (a, b) => a.type.localeCompare(b.type),
+			},
 			{
 				title: "Tags",
 				dataIndex: "tags",
@@ -353,11 +353,15 @@ export default function AssetsPage() {
 				width: 220,
 				render: (tags: string[]) => (
 					<div className="flex flex-wrap gap-2">
-						{tags.map((tag) => (
-							<Badge key={tag} variant="secondary">
-								{tag}
-							</Badge>
-						))}
+						{tags.length ? (
+							tags.map((tag) => (
+								<Badge key={tag} variant="secondary">
+									{tag}
+								</Badge>
+							))
+						) : (
+							<span className="text-xs text-muted-foreground">No tags</span>
+						)}
 					</div>
 				),
 			},
@@ -384,24 +388,11 @@ export default function AssetsPage() {
 				),
 			},
 			{
-				title: "Tenant",
-				dataIndex: "tenantId",
-				key: "tenantId",
-				width: 220,
-				render: (value: string) => <span className="text-xs text-muted-foreground">{value}</span>,
-			},
-			{
-				title: "Client",
-				dataIndex: "clientId",
-				key: "clientId",
-				width: 220,
-				render: (value: string) => <span className="text-xs text-muted-foreground">{value}</span>,
-			},
-			{
 				title: "Updated",
 				dataIndex: "lastUpdated",
 				key: "lastUpdated",
 				width: 140,
+				sorter: (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime(),
 				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
 			},
 			{
@@ -438,8 +429,20 @@ export default function AssetsPage() {
 
 	const fileColumns = useMemo<ColumnsType<FileAssetRow>>(
 		() => [
-			{ title: "Name", dataIndex: "name", key: "name", width: 220 },
-			{ title: "Type", dataIndex: "type", key: "type", width: 120 },
+			{
+				title: "Name",
+				dataIndex: "name",
+				key: "name",
+				width: 220,
+				sorter: (a, b) => a.name.localeCompare(b.name),
+			},
+			{
+				title: "Type",
+				dataIndex: "type",
+				key: "type",
+				width: 120,
+				sorter: (a, b) => a.type.localeCompare(b.type),
+			},
 			{
 				title: "Tags",
 				dataIndex: "tags",
@@ -447,11 +450,15 @@ export default function AssetsPage() {
 				width: 220,
 				render: (tags: string[]) => (
 					<div className="flex flex-wrap gap-2">
-						{tags.map((tag) => (
-							<Badge key={tag} variant="secondary">
-								{tag}
-							</Badge>
-						))}
+						{tags.length ? (
+							tags.map((tag) => (
+								<Badge key={tag} variant="secondary">
+									{tag}
+								</Badge>
+							))
+						) : (
+							<span className="text-xs text-muted-foreground">No tags</span>
+						)}
 					</div>
 				),
 			},
@@ -468,7 +475,14 @@ export default function AssetsPage() {
 				),
 			},
 			{ title: "Size", dataIndex: "fileSize", key: "fileSize", width: 120 },
-			{ title: "Updated", dataIndex: "lastUpdated", key: "lastUpdated", width: 140 },
+			{
+				title: "Updated",
+				dataIndex: "lastUpdated",
+				key: "lastUpdated",
+				width: 140,
+				sorter: (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime(),
+				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
+			},
 			{
 				title: "Actions",
 				key: "actions",
@@ -580,8 +594,6 @@ export default function AssetsPage() {
 				id: createdAsset?.id ?? createId(),
 				name: values.name || "Untitled Text Asset",
 				type: values.type || "TEXT",
-				tenantId: "-",
-				clientId: "-",
 				tags,
 				fields: values.fields.filter((field) => field.key || field.value),
 				createdAt: new Date().toISOString(),
@@ -640,6 +652,36 @@ export default function AssetsPage() {
 		setUploadTarget(null);
 	};
 
+	const normalizedSearch = searchQuery.trim().toLowerCase();
+	const filteredTextAssets = useMemo(() => {
+		if (!normalizedSearch) return textAssets;
+		return textAssets.filter((asset) => {
+			const haystack = [
+				asset.name,
+				asset.type,
+				asset.id,
+				asset.tags.join(" "),
+				asset.fields.map((field) => `${field.key} ${field.value}`).join(" "),
+			]
+				.join(" ")
+				.toLowerCase();
+			return haystack.includes(normalizedSearch);
+		});
+	}, [normalizedSearch, textAssets]);
+
+	const filteredFileAssets = useMemo(() => {
+		if (!normalizedSearch) return fileAssets;
+		return fileAssets.filter((asset) => {
+			const haystack = [asset.name, asset.type, asset.id, asset.tags.join(" "), asset.fileName, asset.fileUrl]
+				.join(" ")
+				.toLowerCase();
+			return haystack.includes(normalizedSearch);
+		});
+	}, [normalizedSearch, fileAssets]);
+
+	const totalAssets = assetView === "TEXT" ? textAssets.length : fileAssets.length;
+	const visibleAssets = assetView === "TEXT" ? filteredTextAssets.length : filteredFileAssets.length;
+
 	return (
 		<div className="flex flex-col gap-6">
 			<Card>
@@ -652,43 +694,59 @@ export default function AssetsPage() {
 					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="flex flex-wrap items-center gap-3">
-						<span className="text-sm font-medium text-muted-foreground">Show assets</span>
-						<div className="flex items-center gap-2 rounded-full border px-3 py-1.5">
-							<span className={assetView === "TEXT" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
-								Text
-							</span>
-							<Switch
-								checked={assetView === "FILE"}
-								onCheckedChange={(checked) => setAssetView(checked ? "FILE" : "TEXT")}
+					<div className="flex flex-wrap items-center justify-between gap-4">
+						<div className="flex flex-wrap items-center gap-3">
+							<span className="text-sm font-medium text-muted-foreground">Show assets</span>
+							<div className="flex items-center gap-2 rounded-full border px-3 py-1.5">
+								<span className={assetView === "TEXT" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
+									Text
+								</span>
+								<Switch
+									checked={assetView === "FILE"}
+									onCheckedChange={(checked) => setAssetView(checked ? "FILE" : "TEXT")}
+								/>
+								<span className={assetView === "FILE" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
+									File
+								</span>
+							</div>
+							<div className="text-xs text-muted-foreground">
+								Showing {visibleAssets} of {totalAssets}
+							</div>
+						</div>
+						<div className="w-full sm:w-[280px]">
+							<Input
+								placeholder="Search assets..."
+								value={searchQuery}
+								onChange={(event) => setSearchQuery(event.target.value)}
 							/>
-							<span className={assetView === "FILE" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
-								File
-							</span>
 						</div>
 					</div>
-					<div className="mt-4">
+					<div className="mt-4 rounded-lg border bg-background/40 p-2 shadow-sm">
 						{assetView === "TEXT" ? (
 							<Table<TextAssetRow>
 								rowKey="id"
-								size="small"
+								size="middle"
 								scroll={{ x: "max-content" }}
-								pagination={false}
+								pagination={{ pageSize: 8, showSizeChanger: true }}
 								loading={isLoading}
 								locale={{ emptyText: "No assets found" }}
 								columns={textColumns}
-								dataSource={textAssets}
+								dataSource={filteredTextAssets}
+								bordered
+								rowClassName={() => "hover:bg-muted/40"}
 							/>
 						) : (
 							<Table<FileAssetRow>
 								rowKey="id"
-								size="small"
+								size="middle"
 								scroll={{ x: "max-content" }}
-								pagination={false}
+								pagination={{ pageSize: 8, showSizeChanger: true }}
 								loading={isLoading}
 								locale={{ emptyText: "No assets found" }}
 								columns={fileColumns}
-								dataSource={fileAssets}
+								dataSource={filteredFileAssets}
+								bordered
+								rowClassName={() => "hover:bg-muted/40"}
 							/>
 						)}
 					</div>
@@ -955,20 +1013,10 @@ export default function AssetsPage() {
 									<div className="font-medium">{formatDate(viewAsset.updatedAt)}</div>
 								</div>
 								{viewAsset.kind === "TEXT" ? (
-									<>
-										<div>
-											<div className="text-xs uppercase text-muted-foreground">Tenant</div>
-											<div className="font-medium">{viewAsset.tenantId || "-"}</div>
-										</div>
-										<div>
-											<div className="text-xs uppercase text-muted-foreground">Client</div>
-											<div className="font-medium">{viewAsset.clientId || "-"}</div>
-										</div>
-										<div>
-											<div className="text-xs uppercase text-muted-foreground">Created</div>
-											<div className="font-medium">{formatDate(viewAsset.createdAt)}</div>
-										</div>
-									</>
+									<div>
+										<div className="text-xs uppercase text-muted-foreground">Created</div>
+										<div className="font-medium">{formatDate(viewAsset.createdAt)}</div>
+									</div>
 								) : (
 									<>
 										<div>
