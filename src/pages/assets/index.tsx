@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import { toast } from "sonner";
@@ -39,6 +39,14 @@ type AssetApiResponse = {
 	message: string;
 	data: {
 		assets: AssetApiItem[];
+	};
+};
+
+type AssetDetailApiResponse = {
+	statusCode: number;
+	message: string;
+	data: {
+		asset: AssetApiItem;
 	};
 };
 
@@ -186,6 +194,36 @@ export default function AssetsPage() {
 		loadAssets();
 	}, []);
 
+	const handleEditAsset = useCallback(() => {
+		toast.info("Edit is not available yet", { position: "top-center" });
+	}, []);
+
+	const handleViewAsset = useCallback(async (assetId: string) => {
+		try {
+			const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
+			const asset = response.data?.asset;
+			toast.success(`Loaded asset details for ${asset?.name ?? assetId}`, { position: "top-center" });
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to load asset details", { position: "top-center" });
+		}
+	}, []);
+
+	const handleDeleteAsset = useCallback(async (assetId: string, assetKind: "TEXT" | "FILE") => {
+		try {
+			await apiClient.delete({ url: `/assets/${assetId}` });
+			if (assetKind === "TEXT") {
+				setTextAssets((prev) => prev.filter((asset) => asset.id !== assetId));
+			} else {
+				setFileAssets((prev) => prev.filter((asset) => asset.id !== assetId));
+			}
+			toast.success("Asset deleted", { position: "top-center" });
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete asset", { position: "top-center" });
+		}
+	}, []);
+
 	const textColumns = useMemo<ColumnsType<TextAssetRow>>(
 		() => [
 			{
@@ -229,14 +267,9 @@ export default function AssetsPage() {
 						</div>
 						<div className="space-y-1">
 							{fields.map((field, index) => (
-								<div
-									key={`${field.key}-${field.type}-${index}`}
-									className="flex items-center justify-between gap-3"
-								>
+								<div key={`${field.key}-${field.type}-${index}`} className="flex items-center justify-between gap-3">
 									<span className="truncate text-foreground">{field.key || "Untitled"}</span>
-									<span className="truncate">
-										{field.isSecret ? "••••••" : field.value || "-"}
-									</span>
+									<span className="truncate">{field.isSecret ? "••••••" : field.value || "-"}</span>
 								</div>
 							))}
 						</div>
@@ -264,8 +297,26 @@ export default function AssetsPage() {
 				width: 140,
 				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
 			},
+			{
+				title: "Actions",
+				key: "actions",
+				width: 220,
+				render: (_: string, record: TextAssetRow) => (
+					<div className="flex flex-wrap gap-2">
+						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
+							Edit
+						</Button>
+						<Button type="button" variant="secondary" size="sm" onClick={() => handleViewAsset(record.id)}>
+							View
+						</Button>
+						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record.id, "TEXT")}>
+							Delete
+						</Button>
+					</div>
+				),
+			},
 		],
-		[],
+		[handleDeleteAsset, handleEditAsset, handleViewAsset],
 	);
 
 	const fileColumns = useMemo<ColumnsType<FileAssetRow>>(
@@ -301,8 +352,26 @@ export default function AssetsPage() {
 			},
 			{ title: "Size", dataIndex: "fileSize", key: "fileSize", width: 120 },
 			{ title: "Updated", dataIndex: "lastUpdated", key: "lastUpdated", width: 140 },
+			{
+				title: "Actions",
+				key: "actions",
+				width: 220,
+				render: (_: string, record: FileAssetRow) => (
+					<div className="flex flex-wrap gap-2">
+						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
+							Edit
+						</Button>
+						<Button type="button" variant="secondary" size="sm" onClick={() => handleViewAsset(record.id)}>
+							View
+						</Button>
+						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record.id, "FILE")}>
+							Delete
+						</Button>
+					</div>
+				),
+			},
 		],
-		[],
+		[handleDeleteAsset, handleEditAsset, handleViewAsset],
 	);
 
 	const handleAddField = () => {
@@ -405,16 +474,29 @@ export default function AssetsPage() {
 						</div>
 					</div>
 					<div className="mt-4">
-						<Table
-							rowKey="id"
-							size="small"
-							scroll={{ x: "max-content" }}
-							pagination={false}
-							loading={isLoading}
-							locale={{ emptyText: "No assets found" }}
-							columns={assetView === "TEXT" ? textColumns : fileColumns}
-							dataSource={assetView === "TEXT" ? textAssets : fileAssets}
-						/>
+						{assetView === "TEXT" ? (
+							<Table<TextAssetRow>
+								rowKey="id"
+								size="small"
+								scroll={{ x: "max-content" }}
+								pagination={false}
+								loading={isLoading}
+								locale={{ emptyText: "No assets found" }}
+								columns={textColumns}
+								dataSource={textAssets}
+							/>
+						) : (
+							<Table<FileAssetRow>
+								rowKey="id"
+								size="small"
+								scroll={{ x: "max-content" }}
+								pagination={false}
+								loading={isLoading}
+								locale={{ emptyText: "No assets found" }}
+								columns={fileColumns}
+								dataSource={fileAssets}
+							/>
+						)}
 					</div>
 				</CardContent>
 			</Card>
@@ -595,9 +677,7 @@ export default function AssetsPage() {
 															<FormControl>
 																<div className="flex items-center gap-2">
 																	<Switch checked={field.value} onCheckedChange={field.onChange} />
-																	<span className="text-xs text-muted-foreground">
-																		{field.value ? "Yes" : "No"}
-																	</span>
+																	<span className="text-xs text-muted-foreground">{field.value ? "Yes" : "No"}</span>
 																</div>
 															</FormControl>
 														</FormItem>
