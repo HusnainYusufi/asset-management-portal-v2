@@ -209,6 +209,7 @@ export default function AssetsPage() {
 	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 	const [viewAsset, setViewAsset] = useState<ViewAssetDetail | null>(null);
 	const [isViewLoading, setIsViewLoading] = useState(false);
+	const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
@@ -251,6 +252,7 @@ export default function AssetsPage() {
 			setIsViewDialogOpen(true);
 			setViewAsset(null);
 			setIsViewLoading(true);
+			setRevealedFields({});
 			try {
 				if (assetKind === "FILE" && asset && "fileName" in asset) {
 					setViewAsset({
@@ -530,6 +532,20 @@ export default function AssetsPage() {
 
 	const handleLoadExample = () => {
 		form.reset(EXAMPLE_FORM_VALUES);
+	};
+
+	const handleToggleReveal = (fieldId: string) => {
+		setRevealedFields((prev) => ({ ...prev, [fieldId]: !prev[fieldId] }));
+	};
+
+	const handleCopyField = async (value: string, label: string) => {
+		if (!navigator?.clipboard) {
+			toast.error("Clipboard access is unavailable.");
+			return;
+		}
+
+		await navigator.clipboard.writeText(value);
+		toast.success(`${label} copied to clipboard.`);
 	};
 
 	const handleUploadChange = ({ fileList }: UploadChangeParam) => {
@@ -977,6 +993,7 @@ export default function AssetsPage() {
 					setIsViewDialogOpen(open);
 					if (!open) {
 						setViewAsset(null);
+						setRevealedFields({});
 					}
 				}}
 			>
@@ -1039,16 +1056,43 @@ export default function AssetsPage() {
 									<div className="text-sm font-semibold">Fields</div>
 									{viewAsset.fields?.length ? (
 										<div className="space-y-2">
-											{viewAsset.fields.map((field, index) => (
-												<div
-													key={`${field.key}-${field.type}-${index}`}
-													className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs"
-												>
-													<div className="min-w-[120px] font-medium text-foreground">{field.key || "Untitled"}</div>
-													<div className="text-muted-foreground">{field.type}</div>
-													<div className="text-foreground">{field.isSecret ? "••••••" : field.value || "-"}</div>
-												</div>
-											))}
+											{viewAsset.fields.map((field, index) => {
+												const fieldId = `${viewAsset.id}-${index}`;
+												const label = field.key || "Field";
+												const displayValue = field.isSecret && !revealedFields[fieldId] ? "••••••" : field.value || "-";
+
+												return (
+													<div
+														key={`${field.key}-${field.type}-${index}`}
+														className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
+													>
+														<div className="min-w-[160px] space-y-1">
+															<div className="text-[11px] font-medium uppercase text-muted-foreground">{label}</div>
+															<div className="text-base font-semibold text-foreground">{displayValue}</div>
+														</div>
+														<div className="flex items-center gap-2">
+															{field.isSecret && (
+																<Button
+																	type="button"
+																	variant="outline"
+																	size="sm"
+																	onClick={() => handleToggleReveal(fieldId)}
+																>
+																	{revealedFields[fieldId] ? "Hide" : "Show"}
+																</Button>
+															)}
+															<Button
+																type="button"
+																variant="secondary"
+																size="sm"
+																onClick={() => handleCopyField(field.value ?? "", label)}
+															>
+																Copy
+															</Button>
+														</div>
+													</div>
+												);
+											})}
 										</div>
 									) : (
 										<div className="text-xs text-muted-foreground">No fields attached to this asset.</div>
