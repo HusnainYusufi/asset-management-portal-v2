@@ -897,7 +897,7 @@ export default function ShowroomsPage() {
 			</Dialog>
 
 			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
-				<DialogContent className="max-h-[90vh] w-[98vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[90vh] w-[98vw] max-w-7xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
 						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
@@ -921,7 +921,9 @@ export default function ShowroomsPage() {
 									<div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
 										<div className="rounded-lg border border-border bg-background/80 p-3">
 											<div className="text-xs font-semibold uppercase text-muted-foreground">Showroom ID</div>
-											<div className="mt-1 font-medium text-foreground">{viewShowroom._id ?? viewShowroom.id}</div>
+											<div className="mt-1 break-words font-medium text-foreground">
+												{viewShowroom._id ?? viewShowroom.id}
+											</div>
 										</div>
 										<div className="rounded-lg border border-border bg-background/80 p-3">
 											<div className="text-xs font-semibold uppercase text-muted-foreground">Last Updated</div>
@@ -936,11 +938,19 @@ export default function ShowroomsPage() {
 									<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
 										<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
 										{viewShowroom.metaFields?.length ? (
-											<div className="mt-4 flex flex-wrap gap-2">
+											<div className="mt-4 grid gap-3 sm:grid-cols-2">
 												{viewShowroom.metaFields.map((field, index) => (
-													<Badge key={`${field.key}-${index}`} variant="secondary" className="text-sm">
-														{field.key || "Key"}: {field.value || "Value"}
-													</Badge>
+													<div
+														key={`${field.key}-${index}`}
+														className="rounded-lg border border-border bg-background/80 p-3"
+													>
+														<div className="text-xs font-semibold uppercase text-muted-foreground">
+															{field.key || "Key"}
+														</div>
+														<div className="mt-1 break-words text-sm font-medium text-foreground">
+															{field.value || "Value"}
+														</div>
+													</div>
 												))}
 											</div>
 										) : (
