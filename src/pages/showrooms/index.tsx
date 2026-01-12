@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
+import type { Control } from "react-hook-form";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -134,6 +135,147 @@ const mapShowroomRow = (item: ShowroomApiItem): ShowroomRow => ({
 	metaFields: item.metaFields ?? [],
 	templates: item.templates ?? [],
 });
+
+type TemplateFieldsProps = {
+	control: Control<ShowroomFormValues>;
+	index: number;
+	templateCount: number;
+	onRemoveTemplate: (index: number) => void;
+};
+
+const TemplateFields = ({ control, index, templateCount, onRemoveTemplate }: TemplateFieldsProps) => {
+	const sizesArray = useFieldArray({
+		control,
+		name: `templates.${index}.sizes` as const,
+	});
+
+	return (
+		<div className="space-y-4 rounded-lg border border-border p-4">
+			<div className="flex items-center justify-between">
+				<div className="text-sm font-semibold">Template {index + 1}</div>
+				<Button type="button" variant="ghost" onClick={() => onRemoveTemplate(index)} disabled={templateCount === 1}>
+					Remove Template
+				</Button>
+			</div>
+			<div className="grid gap-4 md:grid-cols-2">
+				<FormField
+					control={control}
+					name={`templates.${index}.name` as const}
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Template Name</FormLabel>
+							<FormControl>
+								<Input {...field} />
+							</FormControl>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
+				<FormField
+					control={control}
+					name={`templates.${index}.description` as const}
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Description</FormLabel>
+							<FormControl>
+								<Input {...field} />
+							</FormControl>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
+			</div>
+			<div className="space-y-3">
+				{sizesArray.fields.map((size, sizeIndex) => (
+					<div key={size.id} className="space-y-2 rounded-md bg-muted/20 p-3">
+						<div className="flex items-center justify-between">
+							<div className="text-xs font-semibold text-muted-foreground">Size {sizeIndex + 1}</div>
+							<Button
+								type="button"
+								variant="ghost"
+								onClick={() => sizesArray.remove(sizeIndex)}
+								disabled={sizesArray.fields.length === 1}
+							>
+								Remove Size
+							</Button>
+						</div>
+						<div className="grid gap-4 md:grid-cols-4">
+							<FormField
+								control={control}
+								name={`templates.${index}.sizes.${sizeIndex}.label` as const}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel>Label</FormLabel>
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={control}
+								name={`templates.${index}.sizes.${sizeIndex}.width` as const}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel>Width</FormLabel>
+										<FormControl>
+											<Input
+												type="number"
+												value={Number.isNaN(field.value) ? "" : (field.value ?? "")}
+												onChange={(event) => {
+													const value = event.target.value;
+													field.onChange(value === "" ? 0 : Number(value));
+												}}
+											/>
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={control}
+								name={`templates.${index}.sizes.${sizeIndex}.height` as const}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel>Height</FormLabel>
+										<FormControl>
+											<Input
+												type="number"
+												value={Number.isNaN(field.value) ? "" : (field.value ?? "")}
+												onChange={(event) => {
+													const value = event.target.value;
+													field.onChange(value === "" ? 0 : Number(value));
+												}}
+											/>
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={control}
+								name={`templates.${index}.sizes.${sizeIndex}.unit` as const}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel>Unit</FormLabel>
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						</div>
+					</div>
+				))}
+			</div>
+			<Button type="button" variant="outline" onClick={() => sizesArray.append({ ...DEFAULT_SIZE })}>
+				Add Size
+			</Button>
+		</div>
+	);
+};
 
 export default function ShowroomsPage() {
 	const [viewMode, setViewMode] = useState<"table" | "cards">("table");
@@ -322,145 +464,6 @@ export default function ShowroomsPage() {
 
 	const isLastStep = stepIndex === STEP_DETAILS.length - 1;
 	const currentStep = STEP_DETAILS[stepIndex];
-
-	const TemplateFields = ({ index }: { index: number }) => {
-		const sizesArray = useFieldArray({
-			control: form.control,
-			name: `templates.${index}.sizes` as const,
-		});
-
-		return (
-			<div className="space-y-4 rounded-lg border border-border p-4">
-				<div className="flex items-center justify-between">
-					<div className="text-sm font-semibold">Template {index + 1}</div>
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => templatesArray.remove(index)}
-						disabled={templatesArray.fields.length === 1}
-					>
-						Remove Template
-					</Button>
-				</div>
-				<div className="grid gap-4 md:grid-cols-2">
-					<FormField
-						control={form.control}
-						name={`templates.${index}.name` as const}
-						render={({ field }) => (
-							<FormItem>
-								<FormLabel>Template Name</FormLabel>
-								<FormControl>
-									<Input {...field} />
-								</FormControl>
-								<FormMessage />
-							</FormItem>
-						)}
-					/>
-					<FormField
-						control={form.control}
-						name={`templates.${index}.description` as const}
-						render={({ field }) => (
-							<FormItem>
-								<FormLabel>Description</FormLabel>
-								<FormControl>
-									<Input {...field} />
-								</FormControl>
-								<FormMessage />
-							</FormItem>
-						)}
-					/>
-				</div>
-				<div className="space-y-3">
-					{sizesArray.fields.map((size, sizeIndex) => (
-						<div key={size.id} className="space-y-2 rounded-md bg-muted/20 p-3">
-							<div className="flex items-center justify-between">
-								<div className="text-xs font-semibold text-muted-foreground">Size {sizeIndex + 1}</div>
-								<Button
-									type="button"
-									variant="ghost"
-									onClick={() => sizesArray.remove(sizeIndex)}
-									disabled={sizesArray.fields.length === 1}
-								>
-									Remove Size
-								</Button>
-							</div>
-							<div className="grid gap-4 md:grid-cols-4">
-								<FormField
-									control={form.control}
-									name={`templates.${index}.sizes.${sizeIndex}.label` as const}
-									render={({ field }) => (
-										<FormItem>
-											<FormLabel>Label</FormLabel>
-											<FormControl>
-												<Input {...field} />
-											</FormControl>
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
-								<FormField
-									control={form.control}
-									name={`templates.${index}.sizes.${sizeIndex}.width` as const}
-									render={({ field }) => (
-										<FormItem>
-											<FormLabel>Width</FormLabel>
-											<FormControl>
-												<Input
-													type="number"
-													value={Number.isNaN(field.value) ? "" : (field.value ?? "")}
-													onChange={(event) => {
-														const value = event.target.value;
-														field.onChange(value === "" ? 0 : Number(value));
-													}}
-												/>
-											</FormControl>
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
-								<FormField
-									control={form.control}
-									name={`templates.${index}.sizes.${sizeIndex}.height` as const}
-									render={({ field }) => (
-										<FormItem>
-											<FormLabel>Height</FormLabel>
-											<FormControl>
-												<Input
-													type="number"
-													value={Number.isNaN(field.value) ? "" : (field.value ?? "")}
-													onChange={(event) => {
-														const value = event.target.value;
-														field.onChange(value === "" ? 0 : Number(value));
-													}}
-												/>
-											</FormControl>
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
-								<FormField
-									control={form.control}
-									name={`templates.${index}.sizes.${sizeIndex}.unit` as const}
-									render={({ field }) => (
-										<FormItem>
-											<FormLabel>Unit</FormLabel>
-											<FormControl>
-												<Input {...field} />
-											</FormControl>
-											<FormMessage />
-										</FormItem>
-									)}
-								/>
-							</div>
-						</div>
-					))}
-				</div>
-				<Button type="button" variant="outline" onClick={() => sizesArray.append(DEFAULT_SIZE)}>
-					Add Size
-				</Button>
-			</div>
-		);
-	};
 
 	const renderExpandedRow = (record: ShowroomRow) => (
 		<div className="grid gap-4 md:grid-cols-2">
@@ -755,7 +758,7 @@ export default function ShowroomsPage() {
 											<Button
 												type="button"
 												variant="outline"
-												onClick={() => metaFieldsArray.append(DEFAULT_META_FIELD)}
+												onClick={() => metaFieldsArray.append({ ...DEFAULT_META_FIELD })}
 											>
 												Add Meta Field
 											</Button>
@@ -768,9 +771,24 @@ export default function ShowroomsPage() {
 												dimensions.
 											</div>
 											{templatesArray.fields.map((template, index) => (
-												<TemplateFields key={template.id} index={index} />
+												<TemplateFields
+													key={template.id}
+													control={form.control}
+													index={index}
+													templateCount={templatesArray.fields.length}
+													onRemoveTemplate={templatesArray.remove}
+												/>
 											))}
-											<Button type="button" variant="outline" onClick={() => templatesArray.append(DEFAULT_TEMPLATE)}>
+											<Button
+												type="button"
+												variant="outline"
+												onClick={() =>
+													templatesArray.append({
+														...DEFAULT_TEMPLATE,
+														sizes: [{ ...DEFAULT_SIZE }],
+													})
+												}
+											>
 												Add Template
 											</Button>
 										</div>
