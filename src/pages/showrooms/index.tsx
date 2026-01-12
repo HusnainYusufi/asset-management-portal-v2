@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
 import type { Control } from "react-hook-form";
@@ -308,6 +309,7 @@ const TemplateFields = ({ control, index, templateCount, onRemoveTemplate }: Tem
 };
 
 export default function ShowroomsPage() {
+	const navigate = useNavigate();
 	const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 	const [showrooms, setShowrooms] = useState<ShowroomApiItem[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -408,6 +410,13 @@ export default function ShowroomsPage() {
 		}
 	}, []);
 
+	const handleOpenAssets = useCallback(
+		(record: ShowroomRow) => {
+			navigate(`/showrooms/${record.id}/assets`);
+		},
+		[navigate],
+	);
+
 	const handleCloseView = () => {
 		setViewOpen(false);
 		setViewShowroom(null);
@@ -451,6 +460,9 @@ export default function ShowroomsPage() {
 						<Button size="sm" onClick={() => void handleViewShowroom(record)}>
 							View
 						</Button>
+						<Button size="sm" variant="secondary" onClick={() => handleOpenAssets(record)}>
+							Assets
+						</Button>
 						<Button size="sm" variant="outline" disabled>
 							Edit
 						</Button>
@@ -461,7 +473,7 @@ export default function ShowroomsPage() {
 				),
 			},
 		],
-		[handleViewShowroom],
+		[handleOpenAssets, handleViewShowroom],
 	);
 
 	const buildPayload = (values: ShowroomFormValues) => ({
@@ -656,6 +668,14 @@ export default function ShowroomsPage() {
 											) : (
 												<div className="text-sm text-muted-foreground">No templates</div>
 											)}
+											<div className="flex flex-wrap gap-2 pt-2">
+												<Button size="sm" variant="secondary" onClick={() => handleOpenAssets(mapShowroomRow(showroom))}>
+													Assets
+												</Button>
+												<Button size="sm" onClick={() => void handleViewShowroom(mapShowroomRow(showroom))}>
+													View
+												</Button>
+											</div>
 										</CardContent>
 									</Card>
 								))}
