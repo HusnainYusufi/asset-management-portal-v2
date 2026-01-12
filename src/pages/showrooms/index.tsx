@@ -897,7 +897,7 @@ export default function ShowroomsPage() {
 			</Dialog>
 
 			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
-				<DialogContent className="max-h-[90vh] w-[95vw] max-w-5xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[90vh] w-[98vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
 						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
@@ -922,14 +922,6 @@ export default function ShowroomsPage() {
 										<div className="rounded-lg border border-border bg-background/80 p-3">
 											<div className="text-xs font-semibold uppercase text-muted-foreground">Showroom ID</div>
 											<div className="mt-1 font-medium text-foreground">{viewShowroom._id ?? viewShowroom.id}</div>
-										</div>
-										<div className="rounded-lg border border-border bg-background/80 p-3">
-											<div className="text-xs font-semibold uppercase text-muted-foreground">Tenant ID</div>
-											<div className="mt-1 font-medium text-foreground">{viewShowroom.tenantId ?? "—"}</div>
-										</div>
-										<div className="rounded-lg border border-border bg-background/80 p-3">
-											<div className="text-xs font-semibold uppercase text-muted-foreground">Client ID</div>
-											<div className="mt-1 font-medium text-foreground">{viewShowroom.clientId ?? "—"}</div>
 										</div>
 										<div className="rounded-lg border border-border bg-background/80 p-3">
 											<div className="text-xs font-semibold uppercase text-muted-foreground">Last Updated</div>
