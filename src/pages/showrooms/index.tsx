@@ -633,8 +633,17 @@ export default function ShowroomsPage() {
 															{template.sizes?.length ? (
 																<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
 																	{template.sizes.map((size, sizeIndex) => (
-																		<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
-																			{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
+																		<Badge
+																			key={`${size.label}-${sizeIndex}`}
+																			variant="outline"
+																			className="flex flex-wrap items-center gap-1"
+																		>
+																			<span className="font-medium text-foreground">
+																				{size.label || `Size ${sizeIndex + 1}`}
+																			</span>
+																			<span className="text-muted-foreground">Width {size.width}</span>
+																			<span className="text-muted-foreground">Height {size.height}</span>
+																			<span className="text-muted-foreground">Unit {size.unit}</span>
 																		</Badge>
 																	))}
 																</div>
@@ -850,8 +859,17 @@ export default function ShowroomsPage() {
 																{template.sizes?.length ? (
 																	<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
 																		{template.sizes.map((size, sizeIndex) => (
-																			<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
-																				{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
+																			<Badge
+																				key={`${size.label}-${sizeIndex}`}
+																				variant="outline"
+																				className="flex flex-wrap items-center gap-1"
+																			>
+																				<span className="font-medium text-foreground">
+																					{size.label || `Size ${sizeIndex + 1}`}
+																				</span>
+																				<span className="text-muted-foreground">Width {size.width}</span>
+																				<span className="text-muted-foreground">Height {size.height}</span>
+																				<span className="text-muted-foreground">Unit {size.unit}</span>
 																			</Badge>
 																		))}
 																	</div>
@@ -897,7 +915,7 @@ export default function ShowroomsPage() {
 			</Dialog>
 
 			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
-				<DialogContent className="max-h-[92vh] w-[98vw] max-w-[1400px] overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[92vh] w-[96vw] max-w-[1200px] overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl sm:max-w-[1200px] lg:max-w-[1400px] xl:max-w-[1600px]">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
 						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
@@ -987,8 +1005,19 @@ export default function ShowroomsPage() {
 																		<div className="font-medium text-foreground">
 																			{size.label || `Size ${sizeIndex + 1}`}
 																		</div>
-																		<div className="text-muted-foreground">
-																			{size.width} × {size.height} {size.unit}
+																		<div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+																			<div className="rounded-full border border-border/60 bg-background/70 px-2.5 py-1">
+																				<span className="uppercase tracking-wide">Width</span>
+																				<span className="ml-1 font-semibold text-foreground">{size.width}</span>
+																			</div>
+																			<div className="rounded-full border border-border/60 bg-background/70 px-2.5 py-1">
+																				<span className="uppercase tracking-wide">Height</span>
+																				<span className="ml-1 font-semibold text-foreground">{size.height}</span>
+																			</div>
+																			<div className="rounded-full border border-border/60 bg-background/70 px-2.5 py-1">
+																				<span className="uppercase tracking-wide">Unit</span>
+																				<span className="ml-1 font-semibold text-foreground">{size.unit}</span>
+																			</div>
 																		</div>
 																	</div>
 																))}
