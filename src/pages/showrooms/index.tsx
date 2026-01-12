@@ -897,7 +897,7 @@ export default function ShowroomsPage() {
 			</Dialog>
 
 			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
-				<DialogContent className="max-h-[92vh] w-[96vw] max-w-[1200px] overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[92vh] w-[98vw] max-w-[1400px] overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
 						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
