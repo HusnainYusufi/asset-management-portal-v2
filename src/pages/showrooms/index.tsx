@@ -897,7 +897,7 @@ export default function ShowroomsPage() {
 			</Dialog>
 
 			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
-				<DialogContent className="max-h-[90vh] w-[98vw] max-w-7xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+				<DialogContent className="max-h-[92vh] w-[96vw] max-w-[1200px] overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
 						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
 						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
@@ -918,12 +918,10 @@ export default function ShowroomsPage() {
 											<Badge variant="outline">{viewShowroom.templates?.length ?? 0} templates</Badge>
 										</div>
 									</div>
-									<div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+									<div className="mt-4 grid gap-4 text-sm md:grid-cols-2">
 										<div className="rounded-lg border border-border bg-background/80 p-3">
-											<div className="text-xs font-semibold uppercase text-muted-foreground">Showroom ID</div>
-											<div className="mt-1 break-words font-medium text-foreground">
-												{viewShowroom._id ?? viewShowroom.id}
-											</div>
+											<div className="text-xs font-semibold uppercase text-muted-foreground">Showroom Name</div>
+											<div className="mt-1 break-words font-medium text-foreground">{viewShowroom.name}</div>
 										</div>
 										<div className="rounded-lg border border-border bg-background/80 p-3">
 											<div className="text-xs font-semibold uppercase text-muted-foreground">Last Updated</div>
@@ -934,11 +932,11 @@ export default function ShowroomsPage() {
 									</div>
 								</div>
 
-								<div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-									<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
+								<div className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
+									<div className="min-w-0 rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
 										<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
 										{viewShowroom.metaFields?.length ? (
-											<div className="mt-4 grid gap-3 sm:grid-cols-2">
+											<div className="mt-4 grid gap-4 sm:grid-cols-2">
 												{viewShowroom.metaFields.map((field, index) => (
 													<div
 														key={`${field.key}-${index}`}
@@ -957,7 +955,7 @@ export default function ShowroomsPage() {
 											<div className="mt-3 text-sm text-muted-foreground">No meta fields configured.</div>
 										)}
 									</div>
-									<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
+									<div className="min-w-0 rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
 										<div className="text-xs font-semibold uppercase text-muted-foreground">Templates</div>
 										{viewShowroom.templates?.length ? (
 											<div className="mt-4 space-y-4">
