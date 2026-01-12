@@ -43,11 +43,25 @@ type ShowroomApiItem = {
 	updatedAt?: string;
 };
 
+type ShowroomDetail = ShowroomApiItem & {
+	tenantId?: string;
+	clientId?: string;
+};
+
 type ShowroomsResponse = {
 	statusCode?: number;
 	message?: string;
 	data?: ShowroomApiItem[] | { showrooms?: ShowroomApiItem[] };
 	showrooms?: ShowroomApiItem[];
+};
+
+type ShowroomDetailResponse = {
+	statusCode?: number;
+	message?: string;
+	data?: {
+		showroom?: ShowroomDetail;
+	};
+	showroom?: ShowroomDetail;
 };
 
 type ShowroomRow = {
@@ -123,6 +137,22 @@ const extractShowrooms = (response: ShowroomsResponse | ShowroomApiItem[] | unde
 		}
 	}
 	return [];
+};
+
+const extractShowroomDetail = (response: ShowroomDetailResponse | ShowroomDetail | undefined) => {
+	if (!response) {
+		return undefined;
+	}
+	if ("name" in response) {
+		return response;
+	}
+	if (response.data?.showroom) {
+		return response.data.showroom;
+	}
+	if (response.showroom) {
+		return response.showroom;
+	}
+	return undefined;
 };
 
 const mapShowroomRow = (item: ShowroomApiItem): ShowroomRow => ({
@@ -282,6 +312,9 @@ export default function ShowroomsPage() {
 	const [showrooms, setShowrooms] = useState<ShowroomApiItem[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
+	const [viewOpen, setViewOpen] = useState(false);
+	const [viewLoading, setViewLoading] = useState(false);
+	const [viewShowroom, setViewShowroom] = useState<ShowroomDetail | null>(null);
 	const [stepIndex, setStepIndex] = useState(0);
 	const [submitting, setSubmitting] = useState(false);
 	const [searchTerm, setSearchTerm] = useState("");
@@ -297,55 +330,6 @@ export default function ShowroomsPage() {
 		name: "templates",
 	});
 	const watchedValues = form.watch();
-
-	const columns = useMemo<ColumnsType<ShowroomRow>>(
-		() => [
-			{
-				title: "Showroom",
-				dataIndex: "name",
-				key: "name",
-				width: 220,
-				sorter: (a, b) => a.name.localeCompare(b.name),
-				render: (_, record) => (
-					<div className="space-y-1">
-						<div className="font-medium text-foreground">{record.name}</div>
-						<div className="text-xs text-muted-foreground">ID: {record.id}</div>
-					</div>
-				),
-			},
-			{
-				title: "Location",
-				dataIndex: "location",
-				key: "location",
-				width: 200,
-				sorter: (a, b) => a.location.localeCompare(b.location),
-			},
-			{
-				title: "Meta Fields",
-				dataIndex: "metaCount",
-				key: "metaCount",
-				width: 140,
-				sorter: (a, b) => a.metaCount - b.metaCount,
-				render: (value: number) => <span className="font-medium">{value}</span>,
-			},
-			{
-				title: "Templates",
-				dataIndex: "templateCount",
-				key: "templateCount",
-				width: 140,
-				sorter: (a, b) => a.templateCount - b.templateCount,
-				render: (value: number) => <span className="font-medium">{value}</span>,
-			},
-			{
-				title: "Last Updated",
-				dataIndex: "lastUpdated",
-				key: "lastUpdated",
-				width: 140,
-				sorter: (a, b) => a.lastUpdated.localeCompare(b.lastUpdated),
-			},
-		],
-		[],
-	);
 
 	const filteredShowrooms = useMemo(() => {
 		const normalized = searchTerm.trim().toLowerCase();
@@ -402,6 +386,83 @@ export default function ShowroomsPage() {
 	const handleClose = () => {
 		setOpen(false);
 	};
+
+	const handleViewShowroom = useCallback(async (record: ShowroomRow) => {
+		setViewOpen(true);
+		setViewLoading(true);
+		setViewShowroom(null);
+		try {
+			const response = await apiClient.get<ShowroomDetailResponse>({
+				url: `/showrooms/${record.id}`,
+			});
+			const showroom = extractShowroomDetail(response);
+			if (showroom) {
+				setViewShowroom(showroom);
+			} else {
+				toast.error("Showroom details not available", { position: "top-center" });
+			}
+		} catch (_error) {
+			// Errors are already surfaced via the API client interceptor.
+		} finally {
+			setViewLoading(false);
+		}
+	}, []);
+
+	const handleCloseView = () => {
+		setViewOpen(false);
+		setViewShowroom(null);
+	};
+
+	const columns = useMemo<ColumnsType<ShowroomRow>>(
+		() => [
+			{
+				title: "Showroom",
+				dataIndex: "name",
+				key: "name",
+				width: 220,
+				sorter: (a, b) => a.name.localeCompare(b.name),
+				render: (_, record) => (
+					<div className="space-y-1">
+						<div className="font-medium text-foreground">{record.name}</div>
+						<div className="text-xs text-muted-foreground">ID: {record.id}</div>
+					</div>
+				),
+			},
+			{
+				title: "Location",
+				dataIndex: "location",
+				key: "location",
+				width: 200,
+				sorter: (a, b) => a.location.localeCompare(b.location),
+			},
+			{
+				title: "Last Updated",
+				dataIndex: "lastUpdated",
+				key: "lastUpdated",
+				width: 140,
+				sorter: (a, b) => a.lastUpdated.localeCompare(b.lastUpdated),
+			},
+			{
+				title: "Actions",
+				key: "actions",
+				width: 220,
+				render: (_, record) => (
+					<div className="flex flex-wrap gap-2">
+						<Button size="sm" onClick={() => void handleViewShowroom(record)}>
+							View
+						</Button>
+						<Button size="sm" variant="outline" disabled>
+							Edit
+						</Button>
+						<Button size="sm" variant="outline" disabled>
+							Delete
+						</Button>
+					</div>
+				),
+			},
+		],
+		[handleViewShowroom],
+	);
 
 	const buildPayload = (values: ShowroomFormValues) => ({
 		name: values.name.trim(),
@@ -465,51 +526,6 @@ export default function ShowroomsPage() {
 	const isLastStep = stepIndex === STEP_DETAILS.length - 1;
 	const currentStep = STEP_DETAILS[stepIndex];
 
-	const renderExpandedRow = (record: ShowroomRow) => (
-		<div className="grid gap-4 md:grid-cols-2">
-			<div className="rounded-md border border-border bg-muted/20 p-4">
-				<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
-				{record.metaFields?.length ? (
-					<div className="mt-3 flex flex-wrap gap-2">
-						{record.metaFields.map((field, index) => (
-							<Badge key={`${field.key}-${index}`} variant="secondary">
-								{field.key || "Key"}: {field.value || "Value"}
-							</Badge>
-						))}
-					</div>
-				) : (
-					<div className="mt-2 text-sm text-muted-foreground">No meta fields configured.</div>
-				)}
-			</div>
-			<div className="rounded-md border border-border bg-muted/20 p-4">
-				<div className="text-xs font-semibold uppercase text-muted-foreground">Templates</div>
-				{record.templates?.length ? (
-					<div className="mt-3 space-y-3 text-sm">
-						{record.templates.map((template, index) => (
-							<div key={`${template.name}-${index}`} className="space-y-1">
-								<div className="font-medium">{template.name || `Template ${index + 1}`}</div>
-								{template.description && <div className="text-xs text-muted-foreground">{template.description}</div>}
-								{template.sizes?.length ? (
-									<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-										{template.sizes.map((size, sizeIndex) => (
-											<Badge key={`${size.label}-${sizeIndex}`} variant="outline">
-												{size.label || `Size ${sizeIndex + 1}`}: {size.width}x{size.height} {size.unit}
-											</Badge>
-										))}
-									</div>
-								) : (
-									<div className="text-xs text-muted-foreground">No sizes configured.</div>
-								)}
-							</div>
-						))}
-					</div>
-				) : (
-					<div className="mt-2 text-sm text-muted-foreground">No templates configured.</div>
-				)}
-			</div>
-		</div>
-	);
-
 	const reviewMetaFields = watchedValues.metaFields?.filter((field) => field.key.trim() || field.value.trim()) ?? [];
 	const reviewTemplates =
 		watchedValues.templates?.filter(
@@ -567,9 +583,6 @@ export default function ShowroomsPage() {
 							loading={isLoading}
 							columns={columns}
 							dataSource={showroomRows}
-							expandable={{
-								expandedRowRender: renderExpandedRow,
-							}}
 						/>
 					</TabsContent>
 					<TabsContent value="cards">
@@ -880,6 +893,127 @@ export default function ShowroomsPage() {
 							</DialogFooter>
 						</form>
 					</Form>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={viewOpen} onOpenChange={(nextOpen) => !nextOpen && handleCloseView()}>
+				<DialogContent className="max-h-[90vh] w-[95vw] max-w-5xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl">
+					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
+						<DialogTitle className="text-2xl font-semibold">Showroom Details</DialogTitle>
+						<div className="text-sm text-muted-foreground">A full snapshot of the selected showroom.</div>
+					</DialogHeader>
+					<div className="space-y-6 px-8 py-6">
+						{viewLoading ? (
+							<div className="text-sm text-muted-foreground">Loading showroom details...</div>
+						) : viewShowroom ? (
+							<>
+								<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
+									<div className="flex flex-wrap items-start justify-between gap-4">
+										<div>
+											<div className="text-2xl font-semibold text-foreground">{viewShowroom.name}</div>
+											<div className="text-sm text-muted-foreground">{viewShowroom.location}</div>
+										</div>
+										<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+											<Badge variant="outline">{viewShowroom.metaFields?.length ?? 0} meta fields</Badge>
+											<Badge variant="outline">{viewShowroom.templates?.length ?? 0} templates</Badge>
+										</div>
+									</div>
+									<div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+										<div className="rounded-lg border border-border bg-background/80 p-3">
+											<div className="text-xs font-semibold uppercase text-muted-foreground">Showroom ID</div>
+											<div className="mt-1 font-medium text-foreground">{viewShowroom._id ?? viewShowroom.id}</div>
+										</div>
+										<div className="rounded-lg border border-border bg-background/80 p-3">
+											<div className="text-xs font-semibold uppercase text-muted-foreground">Tenant ID</div>
+											<div className="mt-1 font-medium text-foreground">{viewShowroom.tenantId ?? "—"}</div>
+										</div>
+										<div className="rounded-lg border border-border bg-background/80 p-3">
+											<div className="text-xs font-semibold uppercase text-muted-foreground">Client ID</div>
+											<div className="mt-1 font-medium text-foreground">{viewShowroom.clientId ?? "—"}</div>
+										</div>
+										<div className="rounded-lg border border-border bg-background/80 p-3">
+											<div className="text-xs font-semibold uppercase text-muted-foreground">Last Updated</div>
+											<div className="mt-1 font-medium text-foreground">
+												{formatDate(viewShowroom.updatedAt ?? viewShowroom.createdAt)}
+											</div>
+										</div>
+									</div>
+								</div>
+
+								<div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+									<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
+										<div className="text-xs font-semibold uppercase text-muted-foreground">Meta Fields</div>
+										{viewShowroom.metaFields?.length ? (
+											<div className="mt-4 flex flex-wrap gap-2">
+												{viewShowroom.metaFields.map((field, index) => (
+													<Badge key={`${field.key}-${index}`} variant="secondary" className="text-sm">
+														{field.key || "Key"}: {field.value || "Value"}
+													</Badge>
+												))}
+											</div>
+										) : (
+											<div className="mt-3 text-sm text-muted-foreground">No meta fields configured.</div>
+										)}
+									</div>
+									<div className="rounded-xl border border-border bg-muted/20 p-6 shadow-sm">
+										<div className="text-xs font-semibold uppercase text-muted-foreground">Templates</div>
+										{viewShowroom.templates?.length ? (
+											<div className="mt-4 space-y-4">
+												{viewShowroom.templates.map((template, index) => (
+													<div
+														key={`${template.name}-${index}`}
+														className="rounded-lg border border-border bg-background/80 p-4"
+													>
+														<div className="flex flex-wrap items-start justify-between gap-2">
+															<div>
+																<div className="text-base font-semibold">
+																	{template.name || `Template ${index + 1}`}
+																</div>
+																{template.description && (
+																	<div className="text-sm text-muted-foreground">{template.description}</div>
+																)}
+															</div>
+															<Badge variant="outline" className="text-xs">
+																{template.sizes?.length ?? 0} sizes
+															</Badge>
+														</div>
+														{template.sizes?.length ? (
+															<div className="mt-4 space-y-2">
+																{template.sizes.map((size, sizeIndex) => (
+																	<div
+																		key={`${size.label}-${sizeIndex}`}
+																		className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm"
+																	>
+																		<div className="font-medium text-foreground">
+																			{size.label || `Size ${sizeIndex + 1}`}
+																		</div>
+																		<div className="text-muted-foreground">
+																			{size.width} × {size.height} {size.unit}
+																		</div>
+																	</div>
+																))}
+															</div>
+														) : (
+															<div className="mt-3 text-sm text-muted-foreground">No sizes configured.</div>
+														)}
+													</div>
+												))}
+											</div>
+										) : (
+											<div className="mt-3 text-sm text-muted-foreground">No templates configured.</div>
+										)}
+									</div>
+								</div>
+							</>
+						) : (
+							<div className="text-sm text-muted-foreground">Select a showroom to view full details.</div>
+						)}
+					</div>
+					<DialogFooter className="border-t border-border px-8 py-6">
+						<Button type="button" variant="outline" onClick={handleCloseView}>
+							Close
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</Card>
