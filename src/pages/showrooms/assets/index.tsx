@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
-import { Table } from "antd";
+import type { UploadFile } from "antd/es/upload/interface";
+import { Table, Upload } from "antd";
 import { useParams } from "react-router";
 import { toast } from "sonner";
 import { useFieldArray, useForm } from "react-hook-form";
+import { Eye, EyeOff, Copy, Check, ExternalLink, Download, Image as ImageIcon } from "lucide-react";
 
 import apiClient from "@/api/apiClient";
 import { Badge } from "@/ui/badge";
@@ -14,12 +16,16 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { DatePicker } from "@/ui/date-picker";
+import { Label } from "@/ui/label";
 import { fBytes } from "@/utils/format-number";
 
 type AssetField = {
 	key: string;
 	type: string;
 	value: string;
+	isSecret?: boolean;
 };
 
 type AssetFile = {
@@ -38,12 +44,15 @@ type ShowroomAssetApiItem = {
 	id?: string;
 	_id?: string;
 	name: string;
+	description?: string;
 	type: string;
 	tags?: string[];
 	fields?: AssetField[];
 	files?: AssetFile[];
 	createdAt?: string;
 	updatedAt?: string;
+	expirationDate?: string;
+	expirationNotificationsEnabled?: boolean;
 };
 
 type ShowroomAssetsResponse = {
@@ -58,6 +67,7 @@ type ShowroomAssetsResponse = {
 type TextAssetRow = {
 	id: string;
 	name: string;
+	description?: string;
 	type: string;
 	tags: string[];
 	fields: AssetField[];
@@ -68,39 +78,53 @@ type TextAssetRow = {
 type FileAssetRow = {
 	id: string;
 	name: string;
+	description?: string;
 	type: string;
 	tags: string[];
 	fileCount: number;
 	totalSize: string;
+	files: AssetFile[];
 	lastUpdated: string;
 };
 
 type ShowroomAssetFormValues = {
 	name: string;
+	description: string;
 	type: string;
+	tags: string;
 	fields: AssetField[];
+	expirationDate?: Date;
+	expirationNotificationsEnabled: boolean;
 };
 
-const EMPTY_FIELD: AssetField = { key: "", type: "TEXT", value: "" };
+const EMPTY_FIELD: AssetField = { key: "", type: "TEXT", value: "", isSecret: false };
 
 const DEFAULT_FORM_VALUES: ShowroomAssetFormValues = {
 	name: "",
-	type: "",
+	description: "",
+	type: "GENERAL",
+	tags: "",
 	fields: [EMPTY_FIELD],
+	expirationDate: undefined,
+	expirationNotificationsEnabled: false,
 };
 
-const extractShowroomAssets = (response: ShowroomAssetsResponse | ShowroomAssetApiItem[] | undefined) => {
-	if (Array.isArray(response)) {
-		return response;
+const extractShowroomAssets = (response: unknown): ShowroomAssetApiItem[] => {
+	if (!response) return [];
+	if (Array.isArray(response)) return response as ShowroomAssetApiItem[];
+
+	const resp = response as ShowroomAssetsResponse;
+
+	// Handle wrapped response { data: { assets: [...] } }
+	if (resp.data?.assets && Array.isArray(resp.data.assets)) {
+		return resp.data.assets;
 	}
-	if (response && typeof response === "object") {
-		if ("data" in response && response.data && Array.isArray(response.data.assets)) {
-			return response.data.assets;
-		}
-		if ("assets" in response && Array.isArray(response.assets)) {
-			return response.assets;
-		}
+
+	// Handle unwrapped response { assets: [...] }
+	if (resp.assets && Array.isArray(resp.assets)) {
+		return resp.assets;
 	}
+
 	return [];
 };
 
@@ -116,6 +140,7 @@ const formatDate = (value?: string) => {
 const mapTextAsset = (asset: ShowroomAssetApiItem): TextAssetRow => ({
 	id: asset.id ?? asset._id ?? createFallbackId(),
 	name: asset.name,
+	description: asset.description,
 	type: asset.type,
 	tags: asset.tags ?? [],
 	fields: asset.fields ?? [],
@@ -129,25 +154,45 @@ const mapFileAsset = (asset: ShowroomAssetApiItem): FileAssetRow => {
 	return {
 		id: asset.id ?? asset._id ?? createFallbackId(),
 		name: asset.name,
+		description: asset.description,
 		type: asset.type,
 		tags: asset.tags ?? [],
 		fileCount: files.length,
 		totalSize: totalSizeValue ? fBytes(totalSizeValue) : "-",
+		files,
 		lastUpdated: asset.updatedAt ?? asset.createdAt ?? "-",
 	};
 };
 
-const buildPayload = (values: ShowroomAssetFormValues) => ({
-	name: values.name.trim(),
-	type: values.type.trim(),
-	fields: values.fields
-		.filter((field) => field.key.trim() || field.value.trim())
-		.map((field) => ({
-			key: field.key.trim(),
-			type: field.type.trim(),
-			value: field.value.trim(),
-		})),
-});
+const buildPayload = (values: ShowroomAssetFormValues) => {
+	const payload: Record<string, unknown> = {
+		name: values.name.trim(),
+		description: values.description.trim(),
+		type: values.type.trim(),
+		tags: values.tags
+			.split(",")
+			.map((tag) => tag.trim())
+			.filter(Boolean),
+		fields: values.fields
+			.filter((field) => field.key.trim() || field.value.trim())
+			.map((field) => ({
+				key: field.key.trim(),
+				type: field.type.trim(),
+				value: field.value.trim(),
+				isSecret: !!field.isSecret,
+			})),
+		expirationNotificationsEnabled: values.expirationNotificationsEnabled,
+	};
+
+	// Only include expirationDate if notifications are enabled and a date is set
+	if (values.expirationNotificationsEnabled && values.expirationDate) {
+		payload.expirationDate = values.expirationDate.toISOString();
+	} else {
+		payload.expirationDate = null;
+	}
+
+	return payload;
+};
 
 export default function ShowroomAssetsPage() {
 	const { showroomId } = useParams();
@@ -156,8 +201,19 @@ export default function ShowroomAssetsPage() {
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [editMode, setEditMode] = useState<{ id: string; name: string } | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<TextAssetRow | FileAssetRow | null>(null);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+	const [uploadTarget, setUploadTarget] = useState<TextAssetRow | FileAssetRow | null>(null);
+	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+	const [fileList, setFileList] = useState<UploadFile[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+	const [viewAsset, setViewAsset] = useState<ShowroomAssetApiItem | null>(null);
+	const [viewMode, setViewMode] = useState<"DETAILS" | "GALLERY">("DETAILS");
+	const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
+	const [copiedField, setCopiedField] = useState<string | null>(null);
 	const form = useForm<ShowroomAssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -194,6 +250,45 @@ export default function ShowroomAssetsPage() {
 		fieldsArray.append({ ...EMPTY_FIELD });
 	};
 
+	const handleViewAsset = useCallback(
+		async (asset: TextAssetRow | FileAssetRow) => {
+			if (!showroomId) return;
+			try {
+				const response = await apiClient.get<{ asset: ShowroomAssetApiItem } | ShowroomAssetApiItem>({
+					url: `/showrooms/${showroomId}/assets/${asset.id}`,
+				});
+				const assetData = (response as { asset: ShowroomAssetApiItem }).asset || response;
+				setViewAsset(assetData);
+				setViewMode("DETAILS");
+				setRevealedFields({});
+				setIsViewDialogOpen(true);
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to load asset details", { position: "top-center" });
+			}
+		},
+		[showroomId],
+	);
+
+	const handleToggleReveal = (fieldKey: string) => {
+		setRevealedFields((prev) => ({
+			...prev,
+			[fieldKey]: !prev[fieldKey],
+		}));
+	};
+
+	const handleCopy = async (value: string, fieldKey: string) => {
+		try {
+			await navigator.clipboard.writeText(value);
+			setCopiedField(fieldKey);
+			toast.success("Copied to clipboard", { position: "top-center" });
+			setTimeout(() => setCopiedField(null), 2000);
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to copy", { position: "top-center" });
+		}
+	};
+
 	const handleRemoveField = (index: number) => {
 		if (fieldsArray.fields.length > 1) {
 			fieldsArray.remove(index);
@@ -208,17 +303,115 @@ export default function ShowroomAssetsPage() {
 		setIsSubmitting(true);
 		try {
 			const payload = buildPayload(values);
-			await apiClient.post({
-				url: `/showrooms/${showroomId}/assets`,
-				data: payload,
-			});
-			toast.success("Showroom asset created", { position: "top-center" });
+			if (editMode) {
+				await apiClient.patch({
+					url: `/showrooms/${showroomId}/assets/${editMode.id}`,
+					data: payload,
+				});
+				toast.success("Showroom asset updated", { position: "top-center" });
+			} else {
+				await apiClient.post({
+					url: `/showrooms/${showroomId}/assets`,
+					data: payload,
+				});
+				toast.success("Showroom asset created", { position: "top-center" });
+			}
 			form.reset(DEFAULT_FORM_VALUES);
 			setIsDialogOpen(false);
+			setEditMode(null);
 			await fetchAssets();
 		} catch (error) {
 			console.error(error);
-			toast.error("Failed to create showroom asset", { position: "top-center" });
+			toast.error(editMode ? "Failed to update showroom asset" : "Failed to create showroom asset", {
+				position: "top-center",
+			});
+		} finally {
+			setIsSubmitting(false);
+		}
+	};
+
+	const handleEditAsset = useCallback(
+		async (asset: TextAssetRow | FileAssetRow) => {
+			if (!showroomId) return;
+			try {
+				const response = await apiClient.get<{ asset: ShowroomAssetApiItem } | ShowroomAssetApiItem>({
+					url: `/showrooms/${showroomId}/assets/${asset.id}`,
+				});
+				const assetData = (response as { asset: ShowroomAssetApiItem }).asset || response;
+				if (assetData) {
+					form.reset({
+						name: assetData.name,
+						description: assetData.description || "",
+						type: assetData.type,
+						tags: (assetData.tags || []).join(", "),
+						fields: assetData.fields?.map((f) => ({ ...f, isSecret: f.isSecret ?? false })) || [EMPTY_FIELD],
+						expirationDate: assetData.expirationDate ? new Date(assetData.expirationDate) : undefined,
+						expirationNotificationsEnabled: assetData.expirationNotificationsEnabled ?? false,
+					});
+					setEditMode({ id: asset.id, name: asset.name });
+					setIsDialogOpen(true);
+				}
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to load asset details", { position: "top-center" });
+			}
+		},
+		[form, showroomId],
+	);
+
+	const handleDeleteAsset = (asset: TextAssetRow | FileAssetRow) => {
+		setDeleteTarget(asset);
+		setIsDeleteDialogOpen(true);
+	};
+
+	const confirmDeleteAsset = async () => {
+		if (!showroomId || !deleteTarget) return;
+		try {
+			await apiClient.delete({
+				url: `/showrooms/${showroomId}/assets/${deleteTarget.id}`,
+			});
+			toast.success("Asset deleted successfully", { position: "top-center" });
+			setIsDeleteDialogOpen(false);
+			setDeleteTarget(null);
+			await fetchAssets();
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete asset", { position: "top-center" });
+		}
+	};
+
+	const handleOpenUpload = (asset: TextAssetRow | FileAssetRow) => {
+		setUploadTarget(asset);
+		setFileList([]);
+		setIsUploadDialogOpen(true);
+	};
+
+	const handleUploadFiles = async () => {
+		if (!showroomId || !uploadTarget || fileList.length === 0) return;
+		setIsSubmitting(true);
+		try {
+			const formData = new FormData();
+			fileList.forEach((file) => {
+				if (file.originFileObj) {
+					formData.append("files", file.originFileObj);
+				}
+			});
+
+			await apiClient.post({
+				url: `/showrooms/${showroomId}/assets/${uploadTarget.id}/files`,
+				data: formData,
+				headers: {
+					"Content-Type": "multipart/form-data",
+				},
+			});
+			toast.success("Files uploaded successfully", { position: "top-center" });
+			setIsUploadDialogOpen(false);
+			setUploadTarget(null);
+			setFileList([]);
+			await fetchAssets();
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to upload files", { position: "top-center" });
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -253,9 +446,6 @@ export default function ShowroomAssetsPage() {
 			);
 		});
 	}, [normalizedSearch, fileAssets]);
-
-	const totalAssets = assetView === "TEXT" ? textAssets.length : fileAssets.length;
-	const visibleAssets = assetView === "TEXT" ? filteredTextAssets.length : filteredFileAssets.length;
 
 	const textColumns = useMemo<ColumnsType<TextAssetRow>>(
 		() => [
@@ -328,8 +518,27 @@ export default function ShowroomAssetsPage() {
 				sorter: (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime(),
 				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
 			},
+			{
+				title: "Actions",
+				key: "actions",
+				width: 200,
+				fixed: "right",
+				render: (_: any, record: TextAssetRow) => (
+					<div className="flex items-center gap-2">
+						<Button type="button" variant="secondary" size="sm" onClick={() => void handleViewAsset(record)}>
+							View
+						</Button>
+						<Button type="button" variant="outline" size="sm" onClick={() => void handleEditAsset(record)}>
+							Edit
+						</Button>
+						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record)}>
+							Delete
+						</Button>
+					</div>
+				),
+			},
 		],
-		[],
+		[handleEditAsset, handleViewAsset, handleDeleteAsset],
 	);
 
 	const fileColumns = useMemo<ColumnsType<FileAssetRow>>(
@@ -387,8 +596,30 @@ export default function ShowroomAssetsPage() {
 				sorter: (a, b) => new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime(),
 				render: (value: string) => <span className="text-xs text-muted-foreground">{formatDate(value)}</span>,
 			},
+			{
+				title: "Actions",
+				key: "actions",
+				width: 260,
+				fixed: "right",
+				render: (_: any, record: FileAssetRow) => (
+					<div className="flex items-center gap-2">
+						<Button type="button" variant="secondary" size="sm" onClick={() => void handleViewAsset(record)}>
+							View
+						</Button>
+						<Button type="button" variant="outline" size="sm" onClick={() => handleOpenUpload(record)}>
+							Upload
+						</Button>
+						<Button type="button" variant="outline" size="sm" onClick={() => void handleEditAsset(record)}>
+							Edit
+						</Button>
+						<Button type="button" variant="destructive" size="sm" onClick={() => handleDeleteAsset(record)}>
+							Delete
+						</Button>
+					</div>
+				),
+			},
 		],
-		[],
+		[handleEditAsset, handleViewAsset, handleDeleteAsset, handleOpenUpload],
 	);
 
 	return (
@@ -399,7 +630,7 @@ export default function ShowroomAssetsPage() {
 						<div>
 							<div className="text-lg font-semibold">Showroom Assets</div>
 							<div className="text-sm text-muted-foreground">
-								Showing assets for showroom: <span className="font-medium text-foreground">{showroomId ?? "-"}</span>
+								Manage assets for showroom: <span className="font-medium text-foreground">{showroomId ?? "-"}</span>
 							</div>
 						</div>
 						<Button type="button" onClick={() => setIsDialogOpen(true)}>
@@ -408,62 +639,55 @@ export default function ShowroomAssetsPage() {
 					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="flex flex-wrap items-center justify-between gap-4">
-						<div className="flex flex-wrap items-center gap-3">
-							<span className="text-sm font-medium text-muted-foreground">Show assets</span>
-							<div className="flex items-center gap-2 rounded-full border px-3 py-1.5">
-								<span className={assetView === "TEXT" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
-									Text
-								</span>
-								<Switch
-									checked={assetView === "FILE"}
-									onCheckedChange={(checked) => setAssetView(checked ? "FILE" : "TEXT")}
+					<Tabs value={assetView} onValueChange={(v) => setAssetView(v as "TEXT" | "FILE")} className="w-full">
+						<div className="mb-4 flex items-center justify-between gap-4">
+							<TabsList>
+								<TabsTrigger value="TEXT">Text Assets ({textAssets.length})</TabsTrigger>
+								<TabsTrigger value="FILE">File Assets ({fileAssets.length})</TabsTrigger>
+							</TabsList>
+							<div className="w-full sm:w-[280px]">
+								<Input
+									placeholder="Search assets..."
+									value={searchQuery}
+									onChange={(event) => setSearchQuery(event.target.value)}
 								/>
-								<span className={assetView === "FILE" ? "text-sm font-semibold" : "text-sm text-muted-foreground"}>
-									File
-								</span>
-							</div>
-							<div className="text-xs text-muted-foreground">
-								Showing {visibleAssets} of {totalAssets}
 							</div>
 						</div>
-						<div className="w-full sm:w-[280px]">
-							<Input
-								placeholder="Search assets..."
-								value={searchQuery}
-								onChange={(event) => setSearchQuery(event.target.value)}
-							/>
-						</div>
-					</div>
-					<div className="mt-4 rounded-lg border bg-background/40 p-2 shadow-sm">
-						{assetView === "TEXT" ? (
-							<Table<TextAssetRow>
-								rowKey="id"
-								size="middle"
-								scroll={{ x: "max-content" }}
-								pagination={{ pageSize: 8, showSizeChanger: true }}
-								loading={isLoading}
-								locale={{ emptyText: showroomId ? "No assets found" : "Missing showroom ID" }}
-								columns={textColumns}
-								dataSource={filteredTextAssets}
-								bordered
-								rowClassName={() => "hover:bg-muted/40"}
-							/>
-						) : (
-							<Table<FileAssetRow>
-								rowKey="id"
-								size="middle"
-								scroll={{ x: "max-content" }}
-								pagination={{ pageSize: 8, showSizeChanger: true }}
-								loading={isLoading}
-								locale={{ emptyText: showroomId ? "No assets found" : "Missing showroom ID" }}
-								columns={fileColumns}
-								dataSource={filteredFileAssets}
-								bordered
-								rowClassName={() => "hover:bg-muted/40"}
-							/>
-						)}
-					</div>
+
+						<TabsContent value="TEXT" className="mt-0">
+							<div className="rounded-lg border bg-background/40 p-2 shadow-sm">
+								<Table<TextAssetRow>
+									rowKey="id"
+									size="middle"
+									scroll={{ x: "max-content" }}
+									pagination={{ pageSize: 8, showSizeChanger: true }}
+									loading={isLoading}
+									locale={{ emptyText: showroomId ? "No text assets found" : "Missing showroom ID" }}
+									columns={textColumns}
+									dataSource={filteredTextAssets}
+									bordered
+									rowClassName={() => "hover:bg-muted/40"}
+								/>
+							</div>
+						</TabsContent>
+
+						<TabsContent value="FILE" className="mt-0">
+							<div className="rounded-lg border bg-background/40 p-2 shadow-sm">
+								<Table<FileAssetRow>
+									rowKey="id"
+									size="middle"
+									scroll={{ x: "max-content" }}
+									pagination={{ pageSize: 8, showSizeChanger: true }}
+									loading={isLoading}
+									locale={{ emptyText: showroomId ? "No file assets found" : "Missing showroom ID" }}
+									columns={fileColumns}
+									dataSource={filteredFileAssets}
+									bordered
+									rowClassName={() => "hover:bg-muted/40"}
+								/>
+							</div>
+						</TabsContent>
+					</Tabs>
 				</CardContent>
 			</Card>
 			<Dialog
@@ -472,12 +696,13 @@ export default function ShowroomAssetsPage() {
 					setIsDialogOpen(open);
 					if (!open) {
 						form.reset(DEFAULT_FORM_VALUES);
+						setEditMode(null);
 					}
 				}}
 			>
 				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
 					<DialogHeader>
-						<DialogTitle>Add showroom asset</DialogTitle>
+						<DialogTitle>{editMode ? "Edit showroom asset" : "Add showroom asset"}</DialogTitle>
 					</DialogHeader>
 					<Form {...form}>
 						<form className="space-y-6" onSubmit={form.handleSubmit(handleSubmit)}>
@@ -501,7 +726,43 @@ export default function ShowroomAssetsPage() {
 										<FormItem>
 											<FormLabel>Asset Type</FormLabel>
 											<FormControl>
-												<Input placeholder="LINKS" {...field} />
+												<Select value={field.value} onValueChange={field.onChange}>
+													<SelectTrigger>
+														<SelectValue placeholder="Select type" />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="GENERAL">GENERAL</SelectItem>
+														<SelectItem value="CREDENTIALS">CREDENTIALS</SelectItem>
+														<SelectItem value="FILES">FILES</SelectItem>
+														<SelectItem value="LINKS">LINKS</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormControl>
+										</FormItem>
+									)}
+								/>
+							</div>
+							<div className="grid gap-4 md:grid-cols-2">
+								<FormField
+									control={form.control}
+									name="description"
+									render={({ field }) => (
+										<FormItem>
+											<FormLabel>Description</FormLabel>
+											<FormControl>
+												<Input placeholder="Brief description of the asset" {...field} />
+											</FormControl>
+										</FormItem>
+									)}
+								/>
+								<FormField
+									control={form.control}
+									name="tags"
+									render={({ field }) => (
+										<FormItem>
+											<FormLabel>Tags</FormLabel>
+											<FormControl>
+												<Input placeholder="tag1, tag2, tag3 (comma separated)" {...field} />
 											</FormControl>
 										</FormItem>
 									)}
@@ -518,7 +779,7 @@ export default function ShowroomAssetsPage() {
 									{fieldsArray.fields.map((fieldItem, index) => (
 										<div
 											key={fieldItem.id}
-											className="grid gap-4 rounded-md border p-4 md:grid-cols-[1.3fr_1fr_1.3fr_auto]"
+											className="grid gap-4 rounded-md border p-4 md:grid-cols-[1.3fr_0.9fr_1.3fr_0.6fr_auto]"
 										>
 											<FormField
 												control={form.control}
@@ -546,9 +807,11 @@ export default function ShowroomAssetsPage() {
 																<SelectContent>
 																	<SelectItem value="TEXT">TEXT</SelectItem>
 																	<SelectItem value="URL">URL</SelectItem>
-																	<SelectItem value="TOKEN">TOKEN</SelectItem>
 																	<SelectItem value="USERNAME">USERNAME</SelectItem>
 																	<SelectItem value="PASSWORD">PASSWORD</SelectItem>
+																	<SelectItem value="EMAIL">EMAIL</SelectItem>
+																	<SelectItem value="NOTE">NOTE</SelectItem>
+																	<SelectItem value="NUMBER">NUMBER</SelectItem>
 																</SelectContent>
 															</Select>
 														</FormControl>
@@ -563,6 +826,20 @@ export default function ShowroomAssetsPage() {
 														<FormLabel>Value</FormLabel>
 														<FormControl>
 															<Input placeholder="https://canva.com/design/123" {...field} />
+														</FormControl>
+													</FormItem>
+												)}
+											/>
+											<FormField
+												control={form.control}
+												name={`fields.${index}.isSecret`}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>Secret</FormLabel>
+														<FormControl>
+															<div className="flex h-9 items-center">
+																<Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
+															</div>
 														</FormControl>
 													</FormItem>
 												)}
@@ -582,16 +859,337 @@ export default function ShowroomAssetsPage() {
 									))}
 								</div>
 							</div>
+
+							<div className="space-y-4 rounded-md border p-4">
+								<div className="text-sm font-semibold">Expiration Notifications</div>
+								<div className="flex items-center gap-3">
+									<FormField
+										control={form.control}
+										name="expirationNotificationsEnabled"
+										render={({ field }) => (
+											<FormItem className="flex items-center gap-2">
+												<FormControl>
+													<Switch checked={field.value} onCheckedChange={field.onChange} />
+												</FormControl>
+												<Label className="cursor-pointer" onClick={() => field.onChange(!field.value)}>
+													Enable expiration reminders
+												</Label>
+											</FormItem>
+										)}
+									/>
+								</div>
+								{form.watch("expirationNotificationsEnabled") && (
+									<FormField
+										control={form.control}
+										name="expirationDate"
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>Expiration Date</FormLabel>
+												<FormControl>
+													<DatePicker
+														value={field.value}
+														onChange={field.onChange}
+														placeholder="Select expiration date"
+														minDate={new Date()}
+													/>
+												</FormControl>
+												<div className="text-xs text-muted-foreground">
+													You will receive reminders 5 days, 3 days, 2 days before, and on the expiration day.
+												</div>
+											</FormItem>
+										)}
+									/>
+								)}
+							</div>
+
 							<DialogFooter className="flex flex-wrap justify-end gap-2">
 								<Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
 									Cancel
 								</Button>
 								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting ? "Saving..." : "Save Asset"}
+									{isSubmitting ? "Saving..." : editMode ? "Update Asset" : "Save Asset"}
 								</Button>
 							</DialogFooter>
 						</form>
 					</Form>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle>Upload Files</DialogTitle>
+					</DialogHeader>
+					<div className="py-4">
+						<Upload.Dragger
+							multiple
+							fileList={fileList}
+							onChange={({ fileList }) => setFileList(fileList)}
+							beforeUpload={() => false}
+							className="block cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary/50"
+						>
+							<p className="text-sm font-medium">Click or drag files to this area to upload</p>
+							<p className="mt-1 text-xs text-muted-foreground">Support for multiple files upload</p>
+						</Upload.Dragger>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button onClick={() => void handleUploadFiles()} disabled={isSubmitting || fileList.length === 0}>
+							{isSubmitting ? "Uploading..." : "Upload Files"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Asset</DialogTitle>
+					</DialogHeader>
+					<div className="py-4">
+						<p className="text-sm text-muted-foreground">
+							Are you sure you want to delete{" "}
+							<span className="font-semibold text-foreground">{deleteTarget?.name}</span>? This action cannot be undone.
+						</p>
+					</div>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button type="button" variant="destructive" onClick={() => void confirmDeleteAsset()}>
+							Delete
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* View Asset Dialog */}
+			<Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+					<DialogHeader>
+						<DialogTitle className="flex items-center justify-between">
+							<span>{viewAsset?.name || "Asset Details"}</span>
+							{(viewAsset?.files?.length ?? 0) > 0 && (
+								<div className="flex items-center gap-2">
+									<Button
+										type="button"
+										variant={viewMode === "DETAILS" ? "default" : "outline"}
+										size="sm"
+										onClick={() => setViewMode("DETAILS")}
+									>
+										Details
+									</Button>
+									<Button
+										type="button"
+										variant={viewMode === "GALLERY" ? "default" : "outline"}
+										size="sm"
+										onClick={() => setViewMode("GALLERY")}
+									>
+										<ImageIcon className="mr-1 h-4 w-4" />
+										Gallery
+									</Button>
+								</div>
+							)}
+						</DialogTitle>
+					</DialogHeader>
+
+					{viewAsset && (
+						<div className="space-y-6">
+							{/* Asset Info */}
+							<div className="grid gap-4 md:grid-cols-2">
+								<div>
+									<div className="text-xs font-semibold uppercase text-muted-foreground">Type</div>
+									<Badge variant="secondary" className="mt-1">
+										{viewAsset.type}
+									</Badge>
+								</div>
+								{viewAsset.description && (
+									<div>
+										<div className="text-xs font-semibold uppercase text-muted-foreground">Description</div>
+										<div className="mt-1 text-sm">{viewAsset.description}</div>
+									</div>
+								)}
+							</div>
+
+							{/* Tags */}
+							{(viewAsset.tags?.length ?? 0) > 0 && (
+								<div>
+									<div className="text-xs font-semibold uppercase text-muted-foreground mb-2">Tags</div>
+									<div className="flex flex-wrap gap-2">
+										{viewAsset.tags?.map((tag) => (
+											<Badge key={tag} variant="outline">
+												{tag}
+											</Badge>
+										))}
+									</div>
+								</div>
+							)}
+
+							{viewMode === "DETAILS" ? (
+								<>
+									{/* Fields */}
+									{(viewAsset.fields?.length ?? 0) > 0 && (
+										<div>
+											<div className="text-xs font-semibold uppercase text-muted-foreground mb-3">Fields</div>
+											<div className="space-y-3">
+												{viewAsset.fields?.map((field, index) => (
+													<div
+														key={`${field.key}-${index}`}
+														className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+													>
+														<div className="flex-1 min-w-0">
+															<div className="flex items-center gap-2 mb-1">
+																<div className="text-xs font-semibold text-muted-foreground uppercase">{field.key}</div>
+																<Badge variant="outline" className="text-[10px]">
+																	{field.type}
+																</Badge>
+																{field.isSecret && (
+																	<Badge variant="secondary" className="text-[10px]">
+																		Secret
+																	</Badge>
+																)}
+															</div>
+															<div className="text-sm font-mono break-all">
+																{field.isSecret && !revealedFields[`field-${index}`] ? "••••••••" : field.value || "-"}
+															</div>
+														</div>
+														<div className="flex items-center gap-1 shrink-0">
+															{field.isSecret && (
+																<Button
+																	type="button"
+																	variant="ghost"
+																	size="icon"
+																	onClick={() => handleToggleReveal(`field-${index}`)}
+																>
+																	{revealedFields[`field-${index}`] ? (
+																		<EyeOff className="h-4 w-4" />
+																	) : (
+																		<Eye className="h-4 w-4" />
+																	)}
+																</Button>
+															)}
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon"
+																onClick={() => void handleCopy(field.value || "", `field-${index}`)}
+															>
+																{copiedField === `field-${index}` ? (
+																	<Check className="h-4 w-4 text-green-500" />
+																) : (
+																	<Copy className="h-4 w-4" />
+																)}
+															</Button>
+														</div>
+													</div>
+												))}
+											</div>
+										</div>
+									)}
+
+									{/* Files List */}
+									{(viewAsset.files?.length ?? 0) > 0 && (
+										<div>
+											<div className="text-xs font-semibold uppercase text-muted-foreground mb-3">
+												Files ({viewAsset.files?.length})
+											</div>
+											<div className="space-y-2">
+												{viewAsset.files?.map((file) => (
+													<div
+														key={file.id || file.filename}
+														className="flex items-center justify-between gap-3 rounded-lg border p-3"
+													>
+														<div className="flex-1 min-w-0">
+															<div className="text-sm font-medium truncate">{file.originalName}</div>
+															<div className="text-xs text-muted-foreground">
+																{file.mimeType} • {file.size ? fBytes(file.size) : "-"}
+															</div>
+														</div>
+														<div className="flex items-center gap-2 shrink-0">
+															{file.url && (
+																<>
+																	<Button type="button" variant="ghost" size="icon" asChild>
+																		<a href={file.url} target="_blank" rel="noopener noreferrer">
+																			<ExternalLink className="h-4 w-4" />
+																		</a>
+																	</Button>
+																	<Button type="button" variant="ghost" size="icon" asChild>
+																		<a href={file.url} download={file.originalName}>
+																			<Download className="h-4 w-4" />
+																		</a>
+																	</Button>
+																</>
+															)}
+														</div>
+													</div>
+												))}
+											</div>
+										</div>
+									)}
+								</>
+							) : (
+								/* Gallery View */
+								<div>
+									<div className="text-xs font-semibold uppercase text-muted-foreground mb-3">
+										Gallery ({viewAsset.files?.length})
+									</div>
+									<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+										{viewAsset.files?.map((file) => {
+											const isImage = file.mimeType?.startsWith("image/");
+											return (
+												<div
+													key={file.id || file.filename}
+													className="group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
+												>
+													{isImage && file.url ? (
+														<img
+															src={file.url}
+															alt={file.originalName}
+															className="h-full w-full object-cover transition-transform group-hover:scale-105"
+														/>
+													) : (
+														<div className="flex h-full w-full flex-col items-center justify-center p-4">
+															<ImageIcon className="h-12 w-12 text-muted-foreground/50" />
+															<div className="mt-2 text-xs text-center text-muted-foreground truncate max-w-full px-2">
+																{file.originalName}
+															</div>
+														</div>
+													)}
+													<div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+														<div className="text-xs text-white truncate">{file.originalName}</div>
+														<div className="flex items-center gap-2 mt-2">
+															{file.url && (
+																<>
+																	<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
+																		<a href={file.url} target="_blank" rel="noopener noreferrer">
+																			Open
+																		</a>
+																	</Button>
+																	<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
+																		<a href={file.url} download={file.originalName}>
+																			Download
+																		</a>
+																	</Button>
+																</>
+															)}
+														</div>
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								</div>
+							)}
+						</div>
+					)}
+
+					<DialogFooter>
+						<Button type="button" variant="outline" onClick={() => setIsViewDialogOpen(false)}>
+							Close
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</div>

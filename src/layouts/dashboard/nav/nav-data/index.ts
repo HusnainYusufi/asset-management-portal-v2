@@ -63,14 +63,14 @@ const filterNavData = (data: typeof navData, permissions: string[]) => {
 		.filter((group): group is NonNullable<typeof group> => group !== null); // 过滤掉空组
 };
 
-const applyRoleVisibility = (items: NavItemDataProps[], isOwner: boolean): NavItemDataProps[] =>
+const applyRoleVisibility = (items: NavItemDataProps[], isSuperAdmin: boolean): NavItemDataProps[] =>
 	items.map((item) => {
 		const nextItem: NavItemDataProps = {
 			...item,
-			hidden: isOwner && item.path === "/clients" ? true : item.hidden,
+			hidden: !isSuperAdmin && item.path === "/clients" ? true : item.hidden,
 		};
 		if (item.children?.length) {
-			nextItem.children = applyRoleVisibility(item.children, isOwner);
+			nextItem.children = applyRoleVisibility(item.children, isSuperAdmin);
 		}
 		return nextItem;
 	});
@@ -88,14 +88,17 @@ export const useFilteredNavData = () => {
 		() => Array.from(new Set([...permissionCodes, ...roleCodes])),
 		[permissionCodes, roleCodes],
 	);
-	const isOwner = useMemo(() => roles.some((role) => role.code === "OWNER" || role.name === "OWNER"), [roles]);
+	const isSuperAdmin = useMemo(
+		() => roles.some((role) => role.code === "SUPERADMIN" || role.name === "SUPERADMIN"),
+		[roles],
+	);
 	const scopedNavData = useMemo(
 		() =>
 			navData.map((group) => ({
 				...group,
-				items: applyRoleVisibility(group.items, isOwner),
+				items: applyRoleVisibility(group.items, isSuperAdmin),
 			})),
-		[isOwner],
+		[isSuperAdmin],
 	);
 	const filteredNavData = useMemo(() => filterNavData(scopedNavData, authCodes), [authCodes, scopedNavData]);
 	return filteredNavData;

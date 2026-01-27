@@ -14,6 +14,7 @@ import { Badge } from "@/ui/badge";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { CredentialsDrawer } from "@/components/CredentialsDrawer";
 
 type ShowroomMetaField = {
 	key: string;
@@ -314,12 +315,19 @@ export default function ShowroomsPage() {
 	const [showrooms, setShowrooms] = useState<ShowroomApiItem[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
+	const [editMode, setEditMode] = useState<ShowroomRow | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<ShowroomRow | null>(null);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [viewOpen, setViewOpen] = useState(false);
 	const [viewLoading, setViewLoading] = useState(false);
 	const [viewShowroom, setViewShowroom] = useState<ShowroomDetail | null>(null);
 	const [stepIndex, setStepIndex] = useState(0);
 	const [submitting, setSubmitting] = useState(false);
 	const [searchTerm, setSearchTerm] = useState("");
+	const [credentialsDrawerOpen, setCredentialsDrawerOpen] = useState(false);
+	const [credentialsTarget, setCredentialsTarget] = useState<ShowroomRow | null>(null);
+	const [credentials, setCredentials] = useState<any[]>([]);
+	const [credentialsLoading, setCredentialsLoading] = useState(false);
 	const form = useForm<ShowroomFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -422,6 +430,27 @@ export default function ShowroomsPage() {
 		setViewShowroom(null);
 	};
 
+	const handleQuickAccess = useCallback(async (record: ShowroomRow) => {
+		setCredentialsTarget(record);
+		setCredentialsDrawerOpen(true);
+		setCredentialsLoading(true);
+		setCredentials([]);
+
+		try {
+			const response = await apiClient.get<any>({
+				url: `/showrooms/${record.id}/credentials`,
+			});
+			// Handle both wrapped (statusCode/data) and unwrapped responses
+			const items = response.data?.credentials || response.credentials || [];
+			setCredentials(items);
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to load credentials", { position: "top-center" });
+		} finally {
+			setCredentialsLoading(false);
+		}
+	}, []);
+
 	const columns = useMemo<ColumnsType<ShowroomRow>>(
 		() => [
 			{
@@ -454,26 +483,30 @@ export default function ShowroomsPage() {
 			{
 				title: "Actions",
 				key: "actions",
-				width: 220,
+				width: 280,
 				render: (_, record) => (
 					<div className="flex flex-wrap gap-2">
+						<Button size="sm" variant="secondary" onClick={() => void handleQuickAccess(record)}>
+							Quick Access
+						</Button>
 						<Button size="sm" onClick={() => void handleViewShowroom(record)}>
 							View
 						</Button>
 						<Button size="sm" variant="secondary" onClick={() => handleOpenAssets(record)}>
 							Assets
 						</Button>
-						<Button size="sm" variant="outline" disabled>
+						<Button size="sm" variant="outline" onClick={() => void handleEditShowroom(record)}>
 							Edit
 						</Button>
-						<Button size="sm" variant="outline" disabled>
+						<Button size="sm" variant="destructive" onClick={() => handleDeleteShowroom(record)}>
 							Delete
 						</Button>
 					</div>
 				),
 			},
 		],
-		[handleOpenAssets, handleViewShowroom],
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[handleOpenAssets, handleViewShowroom, handleQuickAccess],
 	);
 
 	const buildPayload = (values: ShowroomFormValues) => ({
@@ -525,6 +558,79 @@ export default function ShowroomsPage() {
 		}
 	};
 
+	const handleEditShowroom = useCallback(
+		async (record: ShowroomRow) => {
+			try {
+				const response = await apiClient.get<ShowroomDetailResponse>({
+					url: `/showrooms/${record.id}`,
+				});
+				const showroom = extractShowroomDetail(response);
+				if (showroom) {
+					form.reset({
+						name: showroom.name || "",
+						location: showroom.location || "",
+						metaFields: showroom.metaFields?.length ? showroom.metaFields : [DEFAULT_META_FIELD],
+						templates: showroom.templates?.length ? showroom.templates : [DEFAULT_TEMPLATE],
+					});
+					setEditMode(record);
+					setStepIndex(0);
+					setOpen(true);
+				} else {
+					toast.error("Failed to load showroom for editing", { position: "top-center" });
+				}
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to load showroom for editing", { position: "top-center" });
+			}
+		},
+		[form],
+	);
+
+	const handleUpdateShowroom = async (values: ShowroomFormValues) => {
+		if (!editMode) return;
+		setSubmitting(true);
+		try {
+			const payload = buildPayload(values);
+			const response = await apiClient.patch<ShowroomApiItem | ShowroomsResponse>({
+				url: `/showrooms/${editMode.id}`,
+				data: payload,
+			});
+			if (response) {
+				toast.success("SHOWROOM UPDATED", { position: "top-center" });
+				setOpen(false);
+				setEditMode(null);
+				await fetchShowrooms();
+			} else {
+				toast.error("Showroom update failed", { position: "top-center" });
+			}
+		} catch (_error) {
+			// Errors are already surfaced via the API client interceptor.
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const handleDeleteShowroom = useCallback((record: ShowroomRow) => {
+		setDeleteTarget(record);
+		setIsDeleteDialogOpen(true);
+	}, []);
+
+	const confirmDeleteShowroom = async () => {
+		if (!deleteTarget) return;
+		try {
+			await apiClient.delete({
+				url: `/showrooms/${deleteTarget.id}`,
+			});
+			toast.success("Showroom deleted successfully", { position: "top-center" });
+			setIsDeleteDialogOpen(false);
+			setDeleteTarget(null);
+			await fetchShowrooms();
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete showroom", { position: "top-center" });
+		}
+	};
+
 	const handleNextStep = async () => {
 		if (stepIndex === 0) {
 			const isValid = await form.trigger(["name", "location"]);
@@ -532,7 +638,7 @@ export default function ShowroomsPage() {
 				return;
 			}
 		}
-		setStepIndex((prev) => Math.min(prev + 1, STEP_DETAILS.length - 1));
+		setStepIndex((prev: number) => Math.min(prev + 1, STEP_DETAILS.length - 1));
 	};
 
 	const isLastStep = stepIndex === STEP_DETAILS.length - 1;
@@ -669,7 +775,11 @@ export default function ShowroomsPage() {
 												<div className="text-sm text-muted-foreground">No templates</div>
 											)}
 											<div className="flex flex-wrap gap-2 pt-2">
-												<Button size="sm" variant="secondary" onClick={() => handleOpenAssets(mapShowroomRow(showroom))}>
+												<Button
+													size="sm"
+													variant="secondary"
+													onClick={() => handleOpenAssets(mapShowroomRow(showroom))}
+												>
 													Assets
 												</Button>
 												<Button size="sm" onClick={() => void handleViewShowroom(mapShowroomRow(showroom))}>
@@ -685,16 +795,30 @@ export default function ShowroomsPage() {
 				</Tabs>
 			</CardContent>
 
-			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
+			<Dialog
+				open={open}
+				onOpenChange={(nextOpen: boolean) => {
+					if (!nextOpen) {
+						handleClose();
+						setEditMode(null);
+						form.reset(DEFAULT_FORM_VALUES);
+					}
+				}}
+			>
 				<DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-y-auto border border-primary/20 bg-background/95 p-0 shadow-2xl sm:max-w-6xl">
 					<DialogHeader className="border-b border-border bg-muted/40 px-8 py-6">
-						<DialogTitle className="text-2xl font-semibold">Create Showroom</DialogTitle>
+						<DialogTitle className="text-2xl font-semibold">
+							{editMode ? "Edit Showroom" : "Create Showroom"}
+						</DialogTitle>
 						<div className="text-sm text-muted-foreground">
 							Follow the guided steps to build a complete showroom profile.
 						</div>
 					</DialogHeader>
 					<Form {...form}>
-						<form className="space-y-8 px-8 py-6" onSubmit={form.handleSubmit(handleCreateShowroom)}>
+						<form
+							className="space-y-8 px-8 py-6"
+							onSubmit={form.handleSubmit(editMode ? handleUpdateShowroom : handleCreateShowroom)}
+						>
 							<div className="grid gap-6 lg:grid-cols-[260px_1fr]">
 								<div className="space-y-3 rounded-xl border border-border bg-muted/30 p-5 shadow-sm">
 									<div className="text-xs font-semibold uppercase text-muted-foreground">Progress</div>
@@ -921,7 +1045,7 @@ export default function ShowroomsPage() {
 								</Button>
 								{isLastStep ? (
 									<Button type="submit" disabled={submitting}>
-										Create Showroom
+										{editMode ? "Update Showroom" : "Create Showroom"}
 									</Button>
 								) : (
 									<Button type="button" onClick={handleNextStep}>
@@ -1065,6 +1189,39 @@ export default function ShowroomsPage() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			{/* Delete Confirmation Dialog */}
+			<Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Showroom</DialogTitle>
+					</DialogHeader>
+					<div className="py-4">
+						<p className="text-sm text-muted-foreground">
+							Are you sure you want to delete{" "}
+							<span className="font-semibold text-foreground">{deleteTarget?.name}</span>? This action cannot be undone.
+						</p>
+					</div>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button type="button" variant="destructive" onClick={() => void confirmDeleteShowroom()}>
+							Delete
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Credentials Quick Access Drawer */}
+			<CredentialsDrawer
+				open={credentialsDrawerOpen}
+				onOpenChange={setCredentialsDrawerOpen}
+				showroomId={credentialsTarget?.id || ""}
+				showroomName={credentialsTarget?.name || ""}
+				credentials={credentials}
+				isLoading={credentialsLoading}
+			/>
 		</Card>
 	);
 }

@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader } from "@/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/ui/form";
 import { Input } from "@/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 
 type ClientRow = {
 	id: string;
@@ -51,12 +52,27 @@ type ClientOnboardResponse = {
 	client?: unknown;
 };
 
+type RoleApiItem = {
+	_id?: string;
+	id?: string;
+	name: string;
+	description?: string;
+	isActive?: boolean;
+};
+
+type RolesResponse = {
+	statusCode?: number;
+	message?: string;
+	data?: { roles?: RoleApiItem[] };
+	roles?: RoleApiItem[];
+};
+
 const DEFAULT_FORM_VALUES: ClientOnboardPayload = {
-	clientName: "Demo Client",
-	ownerName: "Owner User",
-	ownerEmail: "yusufihusnain0@gmail.com",
-	ownerPassword: "ChangeMe123!",
-	ownerRoleId: "6962c89d8e3ba79bd65d1fdd",
+	clientName: "",
+	ownerName: "",
+	ownerEmail: "",
+	ownerPassword: "",
+	ownerRoleId: "",
 };
 
 const formatDate = (value?: string) => (value ? value.slice(0, 10) : "-");
@@ -84,11 +100,58 @@ export default function ClientsPage() {
 	const [open, setOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [clients, setClients] = useState<ClientRow[]>([]);
-	const roles = useUserRoles();
-	const isOwner = roles.some((role) => role.code === "OWNER" || role.name === "OWNER");
+	const [availableRoles, setAvailableRoles] = useState<RoleApiItem[]>([]);
+	const [rolesLoading, setRolesLoading] = useState(false);
+	const userRoles = useUserRoles();
+	const isSuperAdmin = userRoles.some((role) => role.code === "SUPERADMIN" || role.name === "SUPERADMIN");
 	const form = useForm<ClientOnboardPayload>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
+
+	const fetchClients = useCallback(async () => {
+		try {
+			const response = await apiClient.get<ClientsResponse | ClientApiItem[]>({
+				url: "/clients",
+			});
+			const items = extractClients(response);
+			setClients(mapClientRows(items));
+		} catch (_error) {
+			// Errors are already surfaced via the API client interceptor.
+		}
+	}, []);
+
+	const fetchRoles = useCallback(async () => {
+		setRolesLoading(true);
+		try {
+			const response = await apiClient.get<RolesResponse>({
+				url: "/roles",
+			});
+			const rolesData = response.data?.roles || response.roles || [];
+			setAvailableRoles(rolesData);
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to load roles", { position: "top-center" });
+		} finally {
+			setRolesLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!isSuperAdmin) {
+			return;
+		}
+		void fetchClients();
+		void fetchRoles();
+	}, [fetchClients, fetchRoles, isSuperAdmin]);
+
+	const handleOpen = () => {
+		form.reset(DEFAULT_FORM_VALUES);
+		setOpen(true);
+	};
+
+	const handleClose = () => {
+		setOpen(false);
+	};
 
 	const columns = useMemo<ColumnsType<ClientRow>>(
 		() => [
@@ -97,12 +160,13 @@ export default function ClientsPage() {
 				dataIndex: "clientName",
 				key: "clientName",
 				width: 220,
+				sorter: (a, b) => a.clientName.localeCompare(b.clientName),
 			},
 			{
 				title: "Tenant ID",
 				dataIndex: "tenantId",
 				key: "tenantId",
-				width: 280,
+				width: 320,
 			},
 			{
 				title: "Status",
@@ -118,38 +182,11 @@ export default function ClientsPage() {
 				dataIndex: "createdAt",
 				key: "createdAt",
 				width: 140,
+				sorter: (a, b) => a.createdAt.localeCompare(b.createdAt),
 			},
 		],
 		[],
 	);
-
-	const fetchClients = useCallback(async () => {
-		try {
-			const response = await apiClient.get<ClientsResponse | ClientApiItem[]>({
-				url: "/clients",
-			});
-			const items = extractClients(response);
-			setClients(mapClientRows(items));
-		} catch (_error) {
-			// Errors are already surfaced via the API client interceptor.
-		}
-	}, []);
-
-	useEffect(() => {
-		if (isOwner) {
-			return;
-		}
-		void fetchClients();
-	}, [fetchClients, isOwner]);
-
-	const handleOpen = () => {
-		form.reset(DEFAULT_FORM_VALUES);
-		setOpen(true);
-	};
-
-	const handleClose = () => {
-		setOpen(false);
-	};
 
 	const handleOnboard = async (values: ClientOnboardPayload) => {
 		setSubmitting(true);
@@ -181,7 +218,7 @@ export default function ClientsPage() {
 		}
 	};
 
-	if (isOwner) {
+	if (!isSuperAdmin) {
 		return (
 			<Card>
 				<CardHeader>
@@ -207,7 +244,7 @@ export default function ClientsPage() {
 					rowKey="id"
 					size="small"
 					scroll={{ x: "max-content" }}
-					pagination={false}
+					pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 25, 50] }}
 					columns={columns}
 					dataSource={clients}
 				/>
@@ -279,12 +316,25 @@ export default function ClientsPage() {
 							<FormField
 								control={form.control}
 								name="ownerRoleId"
-								rules={{ required: "Owner role ID is required" }}
+								rules={{ required: "Owner role is required" }}
 								render={({ field }) => (
 									<FormItem>
-										<FormLabel>Owner Role ID</FormLabel>
+										<FormLabel>Owner Role</FormLabel>
 										<FormControl>
-											<Input {...field} />
+											<Select value={field.value} onValueChange={field.onChange} disabled={rolesLoading}>
+												<SelectTrigger>
+													<SelectValue placeholder={rolesLoading ? "Loading roles..." : "Select role"} />
+												</SelectTrigger>
+												<SelectContent>
+													{availableRoles
+														.filter((r) => r.name === "OWNER")
+														.map((role) => (
+															<SelectItem key={role._id || role.id} value={role._id || role.id || ""}>
+																{role.name}
+															</SelectItem>
+														))}
+												</SelectContent>
+											</Select>
 										</FormControl>
 										<FormMessage />
 									</FormItem>

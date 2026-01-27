@@ -16,6 +16,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
+import { DatePicker } from "@/ui/date-picker";
+import { Label } from "@/ui/label";
 import { GLOBAL_CONFIG } from "@/global-config";
 import { fBytes } from "@/utils/format-number";
 import { useFieldArray, useForm } from "react-hook-form";
@@ -38,6 +40,8 @@ type AssetApiItem = {
 	files: AssetFile[];
 	createdAt: string;
 	updatedAt: string;
+	expirationDate?: string;
+	expirationNotificationsEnabled?: boolean;
 };
 
 type AssetFile = {
@@ -82,6 +86,8 @@ type AssetFormValues = {
 	tags: string;
 	assetKind: "TEXT" | "FILE";
 	fields: AssetField[];
+	expirationDate?: Date;
+	expirationNotificationsEnabled: boolean;
 };
 
 type TextAssetRow = {
@@ -130,10 +136,12 @@ const EMPTY_FIELD: AssetField = { key: "", type: "TEXT", value: "", isSecret: fa
 
 const DEFAULT_FORM_VALUES: AssetFormValues = {
 	name: "",
-	type: "",
+	type: "GENERAL",
 	tags: "",
 	assetKind: "TEXT",
 	fields: [EMPTY_FIELD],
+	expirationDate: undefined,
+	expirationNotificationsEnabled: false,
 };
 
 const EXAMPLE_FORM_VALUES: AssetFormValues = {
@@ -146,6 +154,8 @@ const EXAMPLE_FORM_VALUES: AssetFormValues = {
 		{ key: "password", type: "PASSWORD", value: "SecretPass123!", isSecret: true },
 		{ key: "portal", type: "URL", value: "https://example.com", isSecret: false },
 	],
+	expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+	expirationNotificationsEnabled: true,
 };
 
 const parseTags = (value: string) =>
@@ -227,6 +237,7 @@ export default function AssetsPage() {
 	const [assetView, setAssetView] = useState<"TEXT" | "FILE">("TEXT");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [editMode, setEditMode] = useState<{ id: string; kind: "TEXT" | "FILE" } | null>(null);
 	const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 	const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 	const [viewMode, setViewMode] = useState<"DETAILS" | "GALLERY">("DETAILS");
@@ -266,9 +277,33 @@ export default function AssetsPage() {
 		loadAssets();
 	}, []);
 
-	const handleEditAsset = useCallback(() => {
-		toast.info("Edit is not available yet", { position: "top-center" });
-	}, []);
+	const handleEditAsset = useCallback(
+		async (assetId: string, assetKind: "TEXT" | "FILE") => {
+			try {
+				const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
+				const apiAsset = response.data?.asset;
+				if (!apiAsset) {
+					throw new Error("Asset not found");
+				}
+				const tags = (apiAsset.tags ?? []).join(", ");
+				form.reset({
+					name: apiAsset.name,
+					type: apiAsset.type,
+					tags,
+					assetKind,
+					fields: apiAsset.fields?.length ? apiAsset.fields : [EMPTY_FIELD],
+					expirationDate: apiAsset.expirationDate ? new Date(apiAsset.expirationDate) : undefined,
+					expirationNotificationsEnabled: apiAsset.expirationNotificationsEnabled ?? false,
+				});
+				setEditMode({ id: assetId, kind: assetKind });
+				setIsDialogOpen(true);
+			} catch (error) {
+				console.error(error);
+				toast.error("Failed to load asset for editing", { position: "top-center" });
+			}
+		},
+		[form],
+	);
 
 	const handleViewAsset = useCallback(
 		async (
@@ -440,7 +475,7 @@ export default function AssetsPage() {
 				width: 220,
 				render: (_: string, record: TextAssetRow) => (
 					<div className="flex flex-wrap gap-2">
-						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
+						<Button type="button" variant="outline" size="sm" onClick={() => handleEditAsset(record.id, "TEXT")}>
 							Edit
 						</Button>
 						<Button
@@ -516,7 +551,7 @@ export default function AssetsPage() {
 				width: 280,
 				render: (_: string, record: FileAssetRow) => (
 					<div className="flex flex-wrap gap-2">
-						<Button type="button" variant="outline" size="sm" onClick={handleEditAsset}>
+						<Button type="button" variant="outline" size="sm" onClick={() => handleEditAsset(record.id, "FILE")}>
 							Edit
 						</Button>
 						<Button
@@ -592,7 +627,7 @@ export default function AssetsPage() {
 
 	const handleSubmit = async (values: AssetFormValues) => {
 		const tags = parseTags(values.tags);
-		const payload = {
+		const payload: Record<string, unknown> = {
 			name: values.name,
 			type: values.type,
 			fields:
@@ -607,51 +642,108 @@ export default function AssetsPage() {
 							}))
 					: [],
 			tags,
+			expirationNotificationsEnabled: values.expirationNotificationsEnabled,
 		};
 
-		let createdAsset: AssetApiItem | undefined;
+		// Only include expirationDate if notifications are enabled and a date is set
+		if (values.expirationNotificationsEnabled && values.expirationDate) {
+			payload.expirationDate = values.expirationDate.toISOString();
+		} else {
+			payload.expirationDate = null;
+		}
+
+		let resultAsset: AssetApiItem | undefined;
 		try {
-			const response = await apiClient.post<CreateAssetApiResponse | { asset?: AssetApiItem }>({
-				url: "/assets",
-				data: payload,
-			});
-			if (response && typeof response === "object" && "data" in response) {
-				createdAsset = response.data?.asset;
-			} else if (response && typeof response === "object" && "asset" in response) {
-				createdAsset = response.asset;
+			if (editMode) {
+				// Update existing asset
+				const response = await apiClient.patch<CreateAssetApiResponse | { asset?: AssetApiItem }>({
+					url: `/assets/${editMode.id}`,
+					data: payload,
+				});
+				if (response && typeof response === "object" && "data" in response) {
+					resultAsset = response.data?.asset;
+				} else if (response && typeof response === "object" && "asset" in response) {
+					resultAsset = response.asset;
+				}
+
+				// Update the local state
+				if (editMode.kind === "TEXT") {
+					setTextAssets((prev: TextAssetRow[]) =>
+						prev.map((asset: TextAssetRow) =>
+							asset.id === editMode.id
+								? {
+										...asset,
+										name: values.name,
+										type: values.type,
+										tags,
+										fields: values.fields.filter((field) => field.key || field.value),
+										lastUpdated: new Date().toISOString().slice(0, 10),
+									}
+								: asset,
+						),
+					);
+				} else {
+					setFileAssets((prev: FileAssetRow[]) =>
+						prev.map((asset: FileAssetRow) =>
+							asset.id === editMode.id
+								? {
+										...asset,
+										name: values.name,
+										type: values.type,
+										tags,
+										lastUpdated: new Date().toISOString().slice(0, 10),
+									}
+								: asset,
+						),
+					);
+				}
+				toast.success("Asset updated", { position: "top-center" });
+			} else {
+				// Create new asset
+				const response = await apiClient.post<CreateAssetApiResponse | { asset?: AssetApiItem }>({
+					url: "/assets",
+					data: payload,
+				});
+				if (response && typeof response === "object" && "data" in response) {
+					resultAsset = response.data?.asset;
+				} else if (response && typeof response === "object" && "asset" in response) {
+					resultAsset = response.asset;
+				}
+
+				if (values.assetKind === "FILE") {
+					const newFileAsset: FileAssetRow = {
+						id: resultAsset?.id ?? createId(),
+						name: values.name || "Untitled File Asset",
+						type: values.type || "FILE",
+						tags,
+						fileName: "No files uploaded",
+						fileUrl: "-",
+						fileSize: "-",
+						lastUpdated: new Date().toISOString().slice(0, 10),
+					};
+					setFileAssets((prev) => [newFileAsset, ...prev]);
+				} else {
+					const newTextAsset: TextAssetRow = {
+						id: resultAsset?.id ?? createId(),
+						name: values.name || "Untitled Text Asset",
+						type: values.type || "TEXT",
+						tags,
+						fields: values.fields.filter((field) => field.key || field.value),
+						createdAt: new Date().toISOString(),
+						lastUpdated: new Date().toISOString().slice(0, 10),
+					};
+					setTextAssets((prev) => [newTextAsset, ...prev]);
+				}
+				toast.success("Asset created", { position: "top-center" });
 			}
 		} catch (error) {
 			console.error(error);
-			toast.error("Failed to create asset", { position: "top-center" });
+			toast.error(editMode ? "Failed to update asset" : "Failed to create asset", { position: "top-center" });
 			return;
 		}
 
-		if (values.assetKind === "FILE") {
-			const newFileAsset: FileAssetRow = {
-				id: createdAsset?.id ?? createId(),
-				name: values.name || "Untitled File Asset",
-				type: values.type || "FILE",
-				tags,
-				fileName: "No files uploaded",
-				fileUrl: "-",
-				fileSize: "-",
-				lastUpdated: new Date().toISOString().slice(0, 10),
-			};
-			setFileAssets((prev) => [newFileAsset, ...prev]);
-		} else {
-			const newTextAsset: TextAssetRow = {
-				id: createdAsset?.id ?? createId(),
-				name: values.name || "Untitled Text Asset",
-				type: values.type || "TEXT",
-				tags,
-				fields: values.fields.filter((field) => field.key || field.value),
-				createdAt: new Date().toISOString(),
-				lastUpdated: new Date().toISOString().slice(0, 10),
-			};
-			setTextAssets((prev) => [newTextAsset, ...prev]);
-		}
-		toast.success("Asset created", { position: "top-center" });
 		form.reset(DEFAULT_FORM_VALUES);
+		setEditMode(null);
 		setIsDialogOpen(false);
 	};
 
@@ -803,10 +895,19 @@ export default function AssetsPage() {
 					</div>
 				</CardContent>
 			</Card>
-			<Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+			<Dialog
+				open={isDialogOpen}
+				onOpenChange={(open) => {
+					setIsDialogOpen(open);
+					if (!open) {
+						setEditMode(null);
+						form.reset(DEFAULT_FORM_VALUES);
+					}
+				}}
+			>
 				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
 					<DialogHeader>
-						<DialogTitle>Add new asset</DialogTitle>
+						<DialogTitle>{editMode ? "Edit asset" : "Add new asset"}</DialogTitle>
 					</DialogHeader>
 					<Form {...form}>
 						<form className="space-y-6" onSubmit={form.handleSubmit(handleSubmit)}>
@@ -830,7 +931,17 @@ export default function AssetsPage() {
 										<FormItem>
 											<FormLabel>Asset Type</FormLabel>
 											<FormControl>
-												<Input placeholder="CREDENTIALS" {...field} />
+												<Select value={field.value} onValueChange={field.onChange}>
+													<SelectTrigger>
+														<SelectValue placeholder="Select type" />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="GENERAL">GENERAL</SelectItem>
+														<SelectItem value="CREDENTIALS">CREDENTIALS</SelectItem>
+														<SelectItem value="FILES">FILES</SelectItem>
+														<SelectItem value="LINKS">LINKS</SelectItem>
+													</SelectContent>
+												</Select>
 											</FormControl>
 										</FormItem>
 									)}
@@ -868,6 +979,50 @@ export default function AssetsPage() {
 									)}
 								/>
 							</div>
+
+							{assetKind === "TEXT" && (
+								<div className="space-y-4 rounded-md border p-4">
+									<div className="text-sm font-semibold">Expiration Notifications</div>
+									<div className="flex items-center gap-3">
+										<FormField
+											control={form.control}
+											name="expirationNotificationsEnabled"
+											render={({ field }) => (
+												<FormItem className="flex items-center gap-2">
+													<FormControl>
+														<Switch checked={field.value} onCheckedChange={field.onChange} />
+													</FormControl>
+													<Label className="cursor-pointer" onClick={() => field.onChange(!field.value)}>
+														Enable expiration reminders
+													</Label>
+												</FormItem>
+											)}
+										/>
+									</div>
+									{form.watch("expirationNotificationsEnabled") && (
+										<FormField
+											control={form.control}
+											name="expirationDate"
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>Expiration Date</FormLabel>
+													<FormControl>
+														<DatePicker
+															value={field.value}
+															onChange={field.onChange}
+															placeholder="Select expiration date"
+															minDate={new Date()}
+														/>
+													</FormControl>
+													<div className="text-xs text-muted-foreground">
+														You will receive reminders 5 days, 3 days, 2 days before, and on the expiration day.
+													</div>
+												</FormItem>
+											)}
+										/>
+									)}
+								</div>
+							)}
 
 							{assetKind === "TEXT" && (
 								<div className="space-y-3">
@@ -911,7 +1066,9 @@ export default function AssetsPage() {
 																		<SelectItem value="USERNAME">USERNAME</SelectItem>
 																		<SelectItem value="PASSWORD">PASSWORD</SelectItem>
 																		<SelectItem value="URL">URL</SelectItem>
-																		<SelectItem value="TOKEN">TOKEN</SelectItem>
+																		<SelectItem value="EMAIL">EMAIL</SelectItem>
+																		<SelectItem value="NOTE">NOTE</SelectItem>
+																		<SelectItem value="NUMBER">NUMBER</SelectItem>
 																	</SelectContent>
 																</Select>
 															</FormControl>
