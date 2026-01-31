@@ -20,7 +20,8 @@ export * from "./slide";
 export * from "./transition";
 export * from "./zoom";
 
-export function getVariant(variant = "slideInUp") {
+// biome-ignore lint/suspicious/noExplicitAny: animation variants have mixed structures
+export function getVariant(variant = "slideInUp"): any {
 	return {
 		// Slide
 		slideInUp: varSlide().inUp,

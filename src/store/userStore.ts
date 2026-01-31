@@ -63,10 +63,11 @@ export const useSignIn = () => {
 	const signIn = async (data: SignInReq) => {
 		try {
 			const res = await signInMutation.mutateAsync(data);
+			const resObj = res as unknown as Record<string, unknown>;
 			const payload =
-				res && typeof res === "object" && "data" in (res as Record<string, unknown>)
-					? (res as { data: { user: UserInfo; accessToken: string } }).data
-					: (res as { user: UserInfo; accessToken: string });
+				res && typeof res === "object" && "data" in resObj
+					? (resObj.data as { user: UserInfo; accessToken: string })
+					: (res as unknown as { user: UserInfo; accessToken: string });
 			const { user, accessToken } = payload || {};
 			if (!user || !accessToken) {
 				throw new Error("Invalid login response");

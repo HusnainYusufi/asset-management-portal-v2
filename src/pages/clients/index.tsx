@@ -103,7 +103,10 @@ export default function ClientsPage() {
 	const [availableRoles, setAvailableRoles] = useState<RoleApiItem[]>([]);
 	const [rolesLoading, setRolesLoading] = useState(false);
 	const userRoles = useUserRoles();
-	const isSuperAdmin = userRoles.some((role) => role.code === "SUPERADMIN" || role.name === "SUPERADMIN");
+	// Only consider user as SuperAdmin if roles are loaded AND user has SUPERADMIN role
+	const rolesLoaded = userRoles.length > 0;
+	const isSuperAdmin =
+		rolesLoaded && userRoles.some((role) => role.code === "SUPERADMIN" || role.name === "SUPERADMIN");
 	const form = useForm<ClientOnboardPayload>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -137,12 +140,13 @@ export default function ClientsPage() {
 	}, []);
 
 	useEffect(() => {
-		if (!isSuperAdmin) {
+		// Only fetch if roles are loaded and user is confirmed SUPERADMIN
+		if (!rolesLoaded || !isSuperAdmin) {
 			return;
 		}
 		void fetchClients();
 		void fetchRoles();
-	}, [fetchClients, fetchRoles, isSuperAdmin]);
+	}, [fetchClients, fetchRoles, rolesLoaded, isSuperAdmin]);
 
 	const handleOpen = () => {
 		form.reset(DEFAULT_FORM_VALUES);
@@ -191,26 +195,14 @@ export default function ClientsPage() {
 	const handleOnboard = async (values: ClientOnboardPayload) => {
 		setSubmitting(true);
 		try {
-			const response = await apiClient.post<ClientOnboardResponse>({
+			await apiClient.post<ClientOnboardResponse>({
 				url: "/auth/onboard",
 				data: values,
 			});
-
-			const isSuccess =
-				response &&
-				typeof response === "object" &&
-				("accessToken" in response ||
-					"user" in response ||
-					"client" in response ||
-					("statusCode" in response && response.statusCode === 200));
-
-			if (isSuccess) {
-				toast.success("CLIENT ONBOARDED", { position: "top-center" });
-				setOpen(false);
-				await fetchClients();
-			} else {
-				toast.error("Client onboarding failed", { position: "top-center" });
-			}
+			// If we get here without throwing, the request succeeded
+			toast.success("CLIENT ONBOARDED", { position: "top-center" });
+			setOpen(false);
+			await fetchClients();
 		} catch (_error) {
 			// Errors are already surfaced via the API client interceptor.
 		} finally {
@@ -218,6 +210,21 @@ export default function ClientsPage() {
 		}
 	};
 
+	// Show loading state while roles are being loaded
+	if (!rolesLoaded) {
+		return (
+			<Card>
+				<CardHeader>
+					<div className="text-lg font-semibold">Clients</div>
+				</CardHeader>
+				<CardContent>
+					<div className="text-sm text-muted-foreground">Loading...</div>
+				</CardContent>
+			</Card>
+		);
+	}
+
+	// Show message for non-superadmin users
 	if (!isSuperAdmin) {
 		return (
 			<Card>

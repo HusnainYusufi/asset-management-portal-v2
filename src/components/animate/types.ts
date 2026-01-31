@@ -1,26 +1,28 @@
+import type { Easing } from "motion/react";
+
 export type VariantsType = {
 	durationIn?: number;
 	durationOut?: number;
-	easeIn?: [];
-	easeOut?: [];
+	easeIn?: Easing;
+	easeOut?: Easing;
 	distance?: number;
 };
 
 export type TranHoverType = {
 	duration?: number;
-	ease?: [];
+	ease?: Easing;
 };
 export type TranEnterType = {
 	durationIn?: number;
-	easeIn?: [];
+	easeIn?: Easing;
 };
 export type TranExitType = {
 	durationOut?: number;
-	easeOut?: [];
+	easeOut?: Easing;
 };
 
 export type BackgroundType = {
 	duration?: number;
-	ease?: [];
+	ease?: Easing;
 	colors?: string[];
 };
