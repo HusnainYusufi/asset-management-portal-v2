@@ -258,10 +258,11 @@ export default function ShowroomAssetsPage() {
 		async (asset: TextAssetRow | FileAssetRow) => {
 			if (!showroomId) return;
 			try {
-				const response = await apiClient.get<{ asset: ShowroomAssetApiItem } | ShowroomAssetApiItem>({
+				const response = await apiClient.get<Record<string, unknown>>({
 					url: `/showrooms/${showroomId}/assets/${asset.id}`,
 				});
-				const assetData = (response as { asset: ShowroomAssetApiItem }).asset || response;
+				const resp = response as { asset?: ShowroomAssetApiItem; data?: { asset?: ShowroomAssetApiItem } };
+				const assetData = resp.asset ?? resp.data?.asset ?? (response as unknown as ShowroomAssetApiItem);
 				setViewAsset(assetData);
 				setViewMode("DETAILS");
 				setRevealedFields({});
@@ -320,9 +321,14 @@ export default function ShowroomAssetsPage() {
 				});
 				// Upload files if FILE mode and files were selected
 				if (values.assetKind === "FILE" && createUploadFiles.length > 0) {
-					const wrapper = createResponse as { asset?: { id?: string; _id?: string } };
-					const raw = createResponse as { id?: string; _id?: string };
-					const newAssetId = wrapper.asset?.id ?? wrapper.asset?._id ?? raw.id ?? raw._id;
+					const cr = createResponse as {
+						asset?: { id?: string; _id?: string };
+						data?: { asset?: { id?: string; _id?: string } };
+						id?: string;
+						_id?: string;
+					};
+					const newAssetId =
+						cr.asset?.id ?? cr.asset?._id ?? cr.data?.asset?.id ?? cr.data?.asset?._id ?? cr.id ?? cr._id;
 					if (newAssetId) {
 						const formData = new FormData();
 						createUploadFiles.forEach((file) => {
@@ -363,10 +369,11 @@ export default function ShowroomAssetsPage() {
 		async (asset: TextAssetRow | FileAssetRow) => {
 			if (!showroomId) return;
 			try {
-				const response = await apiClient.get<{ asset: ShowroomAssetApiItem } | ShowroomAssetApiItem>({
+				const response = await apiClient.get<Record<string, unknown>>({
 					url: `/showrooms/${showroomId}/assets/${asset.id}`,
 				});
-				const assetData = (response as { asset: ShowroomAssetApiItem }).asset || response;
+				const editResp = response as { asset?: ShowroomAssetApiItem; data?: { asset?: ShowroomAssetApiItem } };
+				const assetData = editResp.asset ?? editResp.data?.asset ?? (response as unknown as ShowroomAssetApiItem);
 				if (assetData) {
 					const hasFiles = (assetData.files ?? []).length > 0;
 					form.reset({
