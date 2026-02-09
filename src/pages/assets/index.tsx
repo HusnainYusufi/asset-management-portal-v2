@@ -21,6 +21,7 @@ import { Label } from "@/ui/label";
 import { GLOBAL_CONFIG } from "@/global-config";
 import { fBytes } from "@/utils/format-number";
 import { useFieldArray, useForm } from "react-hook-form";
+import { Trash2, Search as SearchIcon } from "lucide-react";
 
 type AssetField = {
 	key: string;
@@ -244,6 +245,7 @@ export default function AssetsPage() {
 	const [viewAsset, setViewAsset] = useState<ViewAssetDetail | null>(null);
 	const [isViewLoading, setIsViewLoading] = useState(false);
 	const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
+	const [gallerySearch, setGallerySearch] = useState("");
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
@@ -621,6 +623,41 @@ export default function AssetsPage() {
 
 		await navigator.clipboard.writeText(value);
 		toast.success(`${label} copied to clipboard.`);
+	};
+
+	const handleDeleteFile = async (assetId: string, fileId: string) => {
+		try {
+			await apiClient.delete({ url: `/assets/${assetId}/files/${fileId}` });
+			toast.success("File deleted", { position: "top-center" });
+			// Refresh view asset
+			const response = await apiClient.get<Record<string, unknown>>({ url: `/assets/${assetId}` });
+			const resp = response as { asset?: AssetApiItem; data?: { asset?: AssetApiItem } };
+			const updated = resp.asset ?? resp.data?.asset;
+			if (updated) {
+				const files = updated.files ?? [];
+				const summaryFiles: UploadFile[] = files.map((file) => ({
+					uid: file.id,
+					name: getFileDisplayName(file),
+					size: file.size,
+				}));
+				const { fileName, totalSize } = summarizeFiles(summaryFiles);
+				setViewAsset({
+					kind: files.length > 0 ? "FILE" : "TEXT",
+					id: updated.id,
+					name: updated.name,
+					type: updated.type,
+					tags: updated.tags ?? [],
+					fileUrl: files[0] ? buildFileUrl(files[0]) || "-" : "-",
+					fileName,
+					fileSize: totalSize,
+					updatedAt: updated.updatedAt,
+					files,
+				});
+			}
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete file", { position: "top-center" });
+		}
 	};
 
 	const handleUploadChange = ({ fileList }: UploadChangeParam) => {
@@ -1240,10 +1277,11 @@ export default function AssetsPage() {
 					if (!open) {
 						setViewAsset(null);
 						setRevealedFields({});
+						setGallerySearch("");
 					}
 				}}
 			>
-				<DialogContent className="sm:max-w-3xl">
+				<DialogContent className="w-[95vw] max-w-5xl max-h-[92vh]">
 					<DialogHeader>
 						<DialogTitle>Asset details</DialogTitle>
 					</DialogHeader>
@@ -1351,85 +1389,116 @@ export default function AssetsPage() {
 							)}
 							{viewAsset.kind === "FILE" && (
 								<div className="space-y-4">
-									<div className="flex items-center justify-between">
+									<div className="flex items-center justify-between gap-4">
 										<div className="text-sm font-semibold">{isGalleryView ? "Asset gallery" : "Asset files"}</div>
-										<div className="text-xs text-muted-foreground">{assetFiles.length} files</div>
-									</div>
-									{assetFiles.length ? (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{assetFiles.map((file) => {
-												const fileUrl = buildFileUrl(file);
-												const fileName = getFileDisplayName(file);
-												const filePath = file.relativePath ?? file.url ?? "-";
-												const isImage = file.mimeType?.startsWith("image/");
-												const fileThumb = getFileThumb(fileName);
-
-												return (
-													<div
-														key={file.id}
-														className="flex flex-col gap-3 rounded-lg border bg-background p-4 shadow-sm"
-													>
-														<div className="flex items-start justify-between gap-3">
-															<div className="flex items-start gap-3">
-																<div className="rounded-md border bg-muted/30 p-2">
-																	<Icon icon={`local:${fileThumb}`} size={28} />
-																</div>
-																<div className="space-y-1">
-																	<div className="text-xs text-muted-foreground">{filePath}</div>
-																</div>
-															</div>
-															<Badge variant="secondary">{file.mimeType ?? "File"}</Badge>
-														</div>
-														{isImage && fileUrl ? (
-															<div className="overflow-hidden rounded-md border">
-																<img src={fileUrl} alt={fileName} className="h-40 w-full object-cover" />
-															</div>
-														) : (
-															<div className="flex h-40 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
-																Preview unavailable
-															</div>
-														)}
-														<div className="grid gap-2 text-xs text-muted-foreground">
-															<div className="flex items-center justify-between">
-																<span>Size</span>
-																<span className="text-foreground">{file.size ? fBytes(file.size) : "-"}</span>
-															</div>
-															<div className="flex items-center justify-between">
-																<span>Uploaded</span>
-																<span className="text-foreground">{formatDate(file.uploadedAt)}</span>
-															</div>
-															<div className="flex items-center justify-between">
-																<span>Uploaded by</span>
-																<span className="text-foreground">{file.uploadedBy ?? "-"}</span>
-															</div>
-														</div>
-														<div className="flex flex-wrap gap-2">
-															{fileUrl ? (
-																<Button asChild size="sm">
-																	<a href={fileUrl} target="_blank" rel="noreferrer" download>
-																		Download
-																	</a>
-																</Button>
-															) : (
-																<Button size="sm" variant="outline" disabled>
-																	Download
-																</Button>
-															)}
-															<Button
-																size="sm"
-																variant="secondary"
-																onClick={() => handleCopyField(filePath, "File path")}
-															>
-																Copy path
-															</Button>
-														</div>
-													</div>
-												);
-											})}
+										<div className="flex items-center gap-3">
+											<div className="relative w-64">
+												<SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+												<Input
+													placeholder="Search files..."
+													value={gallerySearch}
+													onChange={(e) => setGallerySearch(e.target.value)}
+													className="pl-9 h-9"
+												/>
+											</div>
+											<div className="text-xs text-muted-foreground">{assetFiles.length} files</div>
 										</div>
-									) : (
-										<div className="text-xs text-muted-foreground">No files attached to this asset.</div>
-									)}
+									</div>
+									{(() => {
+										const filteredFiles = assetFiles.filter((file) => {
+											if (!gallerySearch.trim()) return true;
+											const q = gallerySearch.trim().toLowerCase();
+											const name = (file.originalName ?? file.filename ?? "").toLowerCase();
+											const mime = (file.mimeType ?? "").toLowerCase();
+											return name.includes(q) || mime.includes(q);
+										});
+										return filteredFiles.length ? (
+											<div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+												{filteredFiles.map((file) => {
+													const fileUrl = buildFileUrl(file);
+													const fileName = getFileDisplayName(file);
+													const filePath = file.relativePath ?? file.url ?? "-";
+													const isImage = file.mimeType?.startsWith("image/");
+													const fileThumb = getFileThumb(fileName);
+													const assetId = viewAsset.id ?? "";
+
+													return (
+														<div
+															key={file.id}
+															className="flex flex-col gap-3 rounded-lg border bg-background p-4 shadow-sm"
+														>
+															<div className="flex items-start justify-between gap-3">
+																<div className="flex items-start gap-3">
+																	<div className="rounded-md border bg-muted/30 p-2">
+																		<Icon icon={`local:${fileThumb}`} size={28} />
+																	</div>
+																	<div className="space-y-1">
+																		<div className="text-xs text-muted-foreground truncate max-w-[140px]">
+																			{filePath}
+																		</div>
+																	</div>
+																</div>
+																<Badge variant="secondary">{file.mimeType ?? "File"}</Badge>
+															</div>
+															{isImage && fileUrl ? (
+																<div className="overflow-hidden rounded-md border">
+																	<img src={fileUrl} alt={fileName} className="h-40 w-full object-cover" />
+																</div>
+															) : (
+																<div className="flex h-40 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+																	Preview unavailable
+																</div>
+															)}
+															<div className="grid gap-2 text-xs text-muted-foreground">
+																<div className="flex items-center justify-between">
+																	<span>Size</span>
+																	<span className="text-foreground">{file.size ? fBytes(file.size) : "-"}</span>
+																</div>
+																<div className="flex items-center justify-between">
+																	<span>Uploaded</span>
+																	<span className="text-foreground">{formatDate(file.uploadedAt)}</span>
+																</div>
+															</div>
+															<div className="flex flex-wrap gap-2">
+																{fileUrl ? (
+																	<Button asChild size="sm">
+																		<a href={fileUrl} target="_blank" rel="noreferrer" download>
+																			Download
+																		</a>
+																	</Button>
+																) : (
+																	<Button size="sm" variant="outline" disabled>
+																		Download
+																	</Button>
+																)}
+																<Button
+																	size="sm"
+																	variant="secondary"
+																	onClick={() => handleCopyField(filePath, "File path")}
+																>
+																	Copy path
+																</Button>
+																{file.id && assetId && (
+																	<Button
+																		size="sm"
+																		variant="destructive"
+																		onClick={() => void handleDeleteFile(assetId, file.id)}
+																	>
+																		<Trash2 className="mr-1 h-3 w-3" />
+																		Delete
+																	</Button>
+																)}
+															</div>
+														</div>
+													);
+												})}
+											</div>
+										) : (
+											<div className="text-center text-sm text-muted-foreground py-8">
+												{gallerySearch.trim() ? "No files match your search." : "No files attached to this asset."}
+											</div>
+										);
+									})()}
 								</div>
 							)}
 						</div>

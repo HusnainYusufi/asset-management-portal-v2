@@ -5,9 +5,10 @@ import { Table, Upload } from "antd";
 import { useParams } from "react-router";
 import { toast } from "sonner";
 import { useFieldArray, useForm } from "react-hook-form";
-import { Eye, EyeOff, Copy, Check, ExternalLink, Download, Image as ImageIcon } from "lucide-react";
+import { Eye, EyeOff, Copy, Check, ExternalLink, Download, Image as ImageIcon, Trash2, Search } from "lucide-react";
 
 import apiClient from "@/api/apiClient";
+import { GLOBAL_CONFIG } from "@/global-config";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -166,6 +167,19 @@ const mapFileAsset = (asset: ShowroomAssetApiItem): FileAssetRow => {
 	};
 };
 
+const buildFileUrl = (file: AssetFile) => {
+	if (file.url) {
+		if (file.url.startsWith("http://") || file.url.startsWith("https://")) return file.url;
+		const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
+		const relativeUrl = file.url.startsWith("/") ? file.url : `/${file.url}`;
+		return `${baseUrl}${relativeUrl}`;
+	}
+	if (!file.relativePath) return "";
+	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
+	const relativePath = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
+	return `${baseUrl}${relativePath}`;
+};
+
 const buildPayload = (values: ShowroomAssetFormValues) => {
 	const payload: Record<string, unknown> = {
 		name: values.name.trim(),
@@ -216,6 +230,7 @@ export default function ShowroomAssetsPage() {
 	const [viewMode, setViewMode] = useState<"DETAILS" | "GALLERY">("DETAILS");
 	const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
 	const [copiedField, setCopiedField] = useState<string | null>(null);
+	const [gallerySearch, setGallerySearch] = useState("");
 	const form = useForm<ShowroomAssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -255,7 +270,7 @@ export default function ShowroomAssetsPage() {
 	};
 
 	const handleViewAsset = useCallback(
-		async (asset: TextAssetRow | FileAssetRow) => {
+		async (asset: TextAssetRow | FileAssetRow, initialViewMode: "DETAILS" | "GALLERY" = "DETAILS") => {
 			if (!showroomId) return;
 			try {
 				const response = await apiClient.get<Record<string, unknown>>({
@@ -264,7 +279,7 @@ export default function ShowroomAssetsPage() {
 				const resp = response as { asset?: ShowroomAssetApiItem; data?: { asset?: ShowroomAssetApiItem } };
 				const assetData = resp.asset ?? resp.data?.asset ?? (response as unknown as ShowroomAssetApiItem);
 				setViewAsset(assetData);
-				setViewMode("DETAILS");
+				setViewMode(initialViewMode);
 				setRevealedFields({});
 				setIsViewDialogOpen(true);
 			} catch (error) {
@@ -397,10 +412,10 @@ export default function ShowroomAssetsPage() {
 		[form, showroomId],
 	);
 
-	const handleDeleteAsset = (asset: TextAssetRow | FileAssetRow) => {
+	const handleDeleteAsset = useCallback((asset: TextAssetRow | FileAssetRow) => {
 		setDeleteTarget(asset);
 		setIsDeleteDialogOpen(true);
-	};
+	}, []);
 
 	const confirmDeleteAsset = async () => {
 		if (!showroomId || !deleteTarget) return;
@@ -418,11 +433,30 @@ export default function ShowroomAssetsPage() {
 		}
 	};
 
-	const handleOpenUpload = (asset: TextAssetRow | FileAssetRow) => {
+	const handleDeleteFile = async (assetId: string, fileId: string) => {
+		if (!showroomId) return;
+		try {
+			await apiClient.delete({ url: `/showrooms/${showroomId}/assets/${assetId}/files/${fileId}` });
+			toast.success("File deleted", { position: "top-center" });
+			// Refresh the view asset
+			const response = await apiClient.get<Record<string, unknown>>({
+				url: `/showrooms/${showroomId}/assets/${assetId}`,
+			});
+			const resp = response as { asset?: ShowroomAssetApiItem; data?: { asset?: ShowroomAssetApiItem } };
+			const updated = resp.asset ?? resp.data?.asset ?? (response as unknown as ShowroomAssetApiItem);
+			setViewAsset(updated);
+			await fetchAssets();
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete file", { position: "top-center" });
+		}
+	};
+
+	const handleOpenUpload = useCallback((asset: TextAssetRow | FileAssetRow) => {
 		setUploadTarget(asset);
 		setFileList([]);
 		setIsUploadDialogOpen(true);
-	};
+	}, []);
 
 	const handleUploadFiles = async () => {
 		if (!showroomId || !uploadTarget || fileList.length === 0) return;
@@ -640,9 +674,13 @@ export default function ShowroomAssetsPage() {
 				width: 260,
 				fixed: "right",
 				render: (_: any, record: FileAssetRow) => (
-					<div className="flex items-center gap-2">
+					<div className="flex flex-wrap items-center gap-2">
 						<Button type="button" variant="secondary" size="sm" onClick={() => void handleViewAsset(record)}>
 							View
+						</Button>
+						<Button type="button" variant="secondary" size="sm" onClick={() => void handleViewAsset(record, "GALLERY")}>
+							<ImageIcon className="mr-1 h-4 w-4" />
+							Gallery
 						</Button>
 						<Button type="button" variant="outline" size="sm" onClick={() => handleOpenUpload(record)}>
 							Upload
@@ -1049,8 +1087,14 @@ export default function ShowroomAssetsPage() {
 			</Dialog>
 
 			{/* View Asset Dialog */}
-			<Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-				<DialogContent className="sm:max-w-3xl">
+			<Dialog
+				open={isViewDialogOpen}
+				onOpenChange={(open) => {
+					setIsViewDialogOpen(open);
+					if (!open) setGallerySearch("");
+				}}
+			>
+				<DialogContent className="w-[95vw] max-w-5xl max-h-[92vh]">
 					<DialogHeader>
 						<DialogTitle className="flex items-center justify-between">
 							<span>{viewAsset?.name || "Asset Details"}</span>
@@ -1179,90 +1223,157 @@ export default function ShowroomAssetsPage() {
 												Files ({viewAsset.files?.length})
 											</div>
 											<div className="space-y-2">
-												{viewAsset.files?.map((file) => (
-													<div
-														key={file.id || file.filename}
-														className="flex items-center justify-between gap-3 rounded-lg border p-3"
-													>
-														<div className="flex-1 min-w-0">
-															<div className="text-sm font-medium truncate">{file.originalName}</div>
-															<div className="text-xs text-muted-foreground">
-																{file.mimeType} • {file.size ? fBytes(file.size) : "-"}
+												{viewAsset.files?.map((file) => {
+													const fileUrl = buildFileUrl(file);
+													return (
+														<div
+															key={file.id || file.filename}
+															className="flex items-center justify-between gap-3 rounded-lg border p-3"
+														>
+															<div className="flex-1 min-w-0">
+																<div className="text-sm font-medium truncate">{file.originalName}</div>
+																<div className="text-xs text-muted-foreground">
+																	{file.mimeType} • {file.size ? fBytes(file.size) : "-"}
+																</div>
+															</div>
+															<div className="flex items-center gap-2 shrink-0">
+																{fileUrl && (
+																	<>
+																		<Button type="button" variant="ghost" size="icon" asChild>
+																			<a href={fileUrl} target="_blank" rel="noopener noreferrer">
+																				<ExternalLink className="h-4 w-4" />
+																			</a>
+																		</Button>
+																		<Button type="button" variant="ghost" size="icon" asChild>
+																			<a href={fileUrl} download={file.originalName}>
+																				<Download className="h-4 w-4" />
+																			</a>
+																		</Button>
+																	</>
+																)}
+																{file.id && viewAsset.id && (
+																	<Button
+																		type="button"
+																		variant="ghost"
+																		size="icon"
+																		className="text-destructive hover:text-destructive"
+																		onClick={() =>
+																			void handleDeleteFile(viewAsset.id ?? viewAsset._id ?? "", file.id ?? "")
+																		}
+																	>
+																		<Trash2 className="h-4 w-4" />
+																	</Button>
+																)}
 															</div>
 														</div>
-														<div className="flex items-center gap-2 shrink-0">
-															{file.url && (
-																<>
-																	<Button type="button" variant="ghost" size="icon" asChild>
-																		<a href={file.url} target="_blank" rel="noopener noreferrer">
-																			<ExternalLink className="h-4 w-4" />
-																		</a>
-																	</Button>
-																	<Button type="button" variant="ghost" size="icon" asChild>
-																		<a href={file.url} download={file.originalName}>
-																			<Download className="h-4 w-4" />
-																		</a>
-																	</Button>
-																</>
-															)}
-														</div>
-													</div>
-												))}
+													);
+												})}
 											</div>
 										</div>
 									)}
 								</>
 							) : (
 								/* Gallery View */
-								<div>
-									<div className="text-xs font-semibold uppercase text-muted-foreground mb-3">
-										Gallery ({viewAsset.files?.length})
+								<div className="space-y-4">
+									<div className="flex items-center justify-between gap-4">
+										<div className="text-xs font-semibold uppercase text-muted-foreground">
+											Gallery ({viewAsset.files?.length})
+										</div>
+										<div className="relative w-64">
+											<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+											<Input
+												placeholder="Search files..."
+												value={gallerySearch}
+												onChange={(e) => setGallerySearch(e.target.value)}
+												className="pl-9 h-9"
+											/>
+										</div>
 									</div>
-									<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-										{viewAsset.files?.map((file) => {
-											const isImage = file.mimeType?.startsWith("image/");
-											return (
-												<div
-													key={file.id || file.filename}
-													className="group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
-												>
-													{isImage && file.url ? (
-														<img
-															src={file.url}
-															alt={file.originalName}
-															className="h-full w-full object-cover transition-transform group-hover:scale-105"
-														/>
-													) : (
-														<div className="flex h-full w-full flex-col items-center justify-center p-4">
-															<ImageIcon className="h-12 w-12 text-muted-foreground/50" />
-															<div className="mt-2 text-xs text-center text-muted-foreground truncate max-w-full px-2">
-																{file.originalName}
+									<div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+										{(viewAsset.files ?? [])
+											.filter((file) => {
+												if (!gallerySearch.trim()) return true;
+												const q = gallerySearch.trim().toLowerCase();
+												return (
+													file.originalName?.toLowerCase().includes(q) ||
+													file.mimeType?.toLowerCase().includes(q) ||
+													file.filename?.toLowerCase().includes(q)
+												);
+											})
+											.map((file) => {
+												const isImage = file.mimeType?.startsWith("image/");
+												const fileUrl = buildFileUrl(file);
+												return (
+													<div
+														key={file.id || file.filename}
+														className="group relative aspect-square overflow-hidden rounded-lg border bg-muted/30"
+													>
+														{isImage && fileUrl ? (
+															<img
+																src={fileUrl}
+																alt={file.originalName}
+																className="h-full w-full object-cover transition-transform group-hover:scale-105"
+															/>
+														) : (
+															<div className="flex h-full w-full flex-col items-center justify-center p-4">
+																<ImageIcon className="h-12 w-12 text-muted-foreground/50" />
+																<div className="mt-2 text-xs text-center text-muted-foreground truncate max-w-full px-2">
+																	{file.originalName}
+																</div>
+																<div className="mt-1 text-[10px] text-muted-foreground/70">
+																	{file.size ? fBytes(file.size) : ""}
+																</div>
+															</div>
+														)}
+														<div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+															<div className="text-xs text-white truncate">{file.originalName}</div>
+															<div className="text-[10px] text-white/70">{file.size ? fBytes(file.size) : ""}</div>
+															<div className="flex items-center gap-2 mt-2">
+																{fileUrl && (
+																	<>
+																		<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
+																			<a href={fileUrl} target="_blank" rel="noopener noreferrer">
+																				Open
+																			</a>
+																		</Button>
+																		<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
+																			<a href={fileUrl} download={file.originalName}>
+																				Download
+																			</a>
+																		</Button>
+																	</>
+																)}
+																{file.id && viewAsset.id && (
+																	<Button
+																		type="button"
+																		variant="destructive"
+																		size="sm"
+																		className="h-7 text-xs"
+																		onClick={() =>
+																			void handleDeleteFile(viewAsset.id ?? viewAsset._id ?? "", file.id ?? "")
+																		}
+																	>
+																		<Trash2 className="mr-1 h-3 w-3" />
+																		Delete
+																	</Button>
+																)}
 															</div>
 														</div>
-													)}
-													<div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
-														<div className="text-xs text-white truncate">{file.originalName}</div>
-														<div className="flex items-center gap-2 mt-2">
-															{file.url && (
-																<>
-																	<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
-																		<a href={file.url} target="_blank" rel="noopener noreferrer">
-																			Open
-																		</a>
-																	</Button>
-																	<Button type="button" variant="secondary" size="sm" className="h-7 text-xs" asChild>
-																		<a href={file.url} download={file.originalName}>
-																			Download
-																		</a>
-																	</Button>
-																</>
-															)}
-														</div>
 													</div>
-												</div>
-											);
-										})}
+												);
+											})}
 									</div>
+									{(viewAsset.files ?? []).filter((file) => {
+										if (!gallerySearch.trim()) return true;
+										const q = gallerySearch.trim().toLowerCase();
+										return (
+											file.originalName?.toLowerCase().includes(q) ||
+											file.mimeType?.toLowerCase().includes(q) ||
+											file.filename?.toLowerCase().includes(q)
+										);
+									}).length === 0 && (
+										<div className="text-center text-sm text-muted-foreground py-8">No files match your search.</div>
+									)}
 								</div>
 							)}
 						</div>
