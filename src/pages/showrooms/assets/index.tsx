@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
-import type { UploadFile } from "antd/es/upload/interface";
+import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { Table, Upload } from "antd";
 import { useParams } from "react-router";
 import { toast } from "sonner";
@@ -92,6 +92,7 @@ type ShowroomAssetFormValues = {
 	description: string;
 	type: string;
 	tags: string;
+	assetKind: "TEXT" | "FILE";
 	fields: AssetField[];
 	expirationDate?: Date;
 	expirationNotificationsEnabled: boolean;
@@ -104,6 +105,7 @@ const DEFAULT_FORM_VALUES: ShowroomAssetFormValues = {
 	description: "",
 	type: "GENERAL",
 	tags: "",
+	assetKind: "TEXT",
 	fields: [EMPTY_FIELD],
 	expirationDate: undefined,
 	expirationNotificationsEnabled: false,
@@ -181,14 +183,14 @@ const buildPayload = (values: ShowroomAssetFormValues) => {
 				value: field.value.trim(),
 				isSecret: !!field.isSecret,
 			})),
-		expirationNotificationsEnabled: values.expirationNotificationsEnabled,
 	};
 
-	// Only include expirationDate if notifications are enabled and a date is set
-	if (values.expirationNotificationsEnabled && values.expirationDate) {
-		payload.expirationDate = values.expirationDate.toISOString();
-	} else {
-		payload.expirationDate = null;
+	// Only include expiration fields when notifications are enabled
+	if (values.expirationNotificationsEnabled) {
+		payload.expirationNotificationsEnabled = true;
+		if (values.expirationDate) {
+			payload.expirationDate = values.expirationDate.toISOString();
+		}
 	}
 
 	return payload;
@@ -221,6 +223,8 @@ export default function ShowroomAssetsPage() {
 		control: form.control,
 		name: "fields",
 	});
+	const assetKind = form.watch("assetKind");
+	const [createUploadFiles, setCreateUploadFiles] = useState<UploadFile[]>([]);
 
 	const fetchAssets = useCallback(async () => {
 		if (!showroomId) {
@@ -310,13 +314,38 @@ export default function ShowroomAssetsPage() {
 				});
 				toast.success("Showroom asset updated", { position: "top-center" });
 			} else {
-				await apiClient.post({
+				const createResponse = await apiClient.post<Record<string, unknown>>({
 					url: `/showrooms/${showroomId}/assets`,
 					data: payload,
 				});
+				// Upload files if FILE mode and files were selected
+				if (values.assetKind === "FILE" && createUploadFiles.length > 0) {
+					const wrapper = createResponse as { asset?: { id?: string; _id?: string } };
+					const raw = createResponse as { id?: string; _id?: string };
+					const newAssetId = wrapper.asset?.id ?? wrapper.asset?._id ?? raw.id ?? raw._id;
+					if (newAssetId) {
+						const formData = new FormData();
+						createUploadFiles.forEach((file) => {
+							if (file.originFileObj) {
+								formData.append("files", file.originFileObj);
+							}
+						});
+						try {
+							await apiClient.post({
+								url: `/showrooms/${showroomId}/assets/${newAssetId}/files`,
+								data: formData,
+								headers: { "Content-Type": "multipart/form-data" },
+							});
+						} catch (uploadError) {
+							console.error(uploadError);
+							toast.error("Asset created but file upload failed", { position: "top-center" });
+						}
+					}
+				}
 				toast.success("Showroom asset created", { position: "top-center" });
 			}
 			form.reset(DEFAULT_FORM_VALUES);
+			setCreateUploadFiles([]);
 			setIsDialogOpen(false);
 			setEditMode(null);
 			await fetchAssets();
@@ -339,11 +368,13 @@ export default function ShowroomAssetsPage() {
 				});
 				const assetData = (response as { asset: ShowroomAssetApiItem }).asset || response;
 				if (assetData) {
+					const hasFiles = (assetData.files ?? []).length > 0;
 					form.reset({
 						name: assetData.name,
 						description: assetData.description || "",
 						type: assetData.type,
 						tags: (assetData.tags || []).join(", "),
+						assetKind: hasFiles ? "FILE" : "TEXT",
 						fields: assetData.fields?.map((f) => ({ ...f, isSecret: f.isSecret ?? false })) || [EMPTY_FIELD],
 						expirationDate: assetData.expirationDate ? new Date(assetData.expirationDate) : undefined,
 						expirationNotificationsEnabled: assetData.expirationNotificationsEnabled ?? false,
@@ -696,11 +727,12 @@ export default function ShowroomAssetsPage() {
 					setIsDialogOpen(open);
 					if (!open) {
 						form.reset(DEFAULT_FORM_VALUES);
+						setCreateUploadFiles([]);
 						setEditMode(null);
 					}
 				}}
 			>
-				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+				<DialogContent className="sm:max-w-4xl">
 					<DialogHeader>
 						<DialogTitle>{editMode ? "Edit showroom asset" : "Add showroom asset"}</DialogTitle>
 					</DialogHeader>
@@ -745,6 +777,26 @@ export default function ShowroomAssetsPage() {
 							<div className="grid gap-4 md:grid-cols-2">
 								<FormField
 									control={form.control}
+									name="assetKind"
+									render={({ field }) => (
+										<FormItem>
+											<FormLabel>Asset Mode</FormLabel>
+											<FormControl>
+												<Select value={field.value} onValueChange={field.onChange}>
+													<SelectTrigger>
+														<SelectValue placeholder="Select mode" />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="TEXT">Text</SelectItem>
+														<SelectItem value="FILE">File</SelectItem>
+													</SelectContent>
+												</Select>
+											</FormControl>
+										</FormItem>
+									)}
+								/>
+								<FormField
+									control={form.control}
 									name="description"
 									render={({ field }) => (
 										<FormItem>
@@ -755,6 +807,8 @@ export default function ShowroomAssetsPage() {
 										</FormItem>
 									)}
 								/>
+							</div>
+							<div className="grid gap-4 md:grid-cols-2">
 								<FormField
 									control={form.control}
 									name="tags"
@@ -768,97 +822,119 @@ export default function ShowroomAssetsPage() {
 									)}
 								/>
 							</div>
-							<div className="space-y-3">
-								<div className="flex items-center justify-between">
-									<div className="text-sm font-semibold">Fields</div>
-									<Button type="button" variant="outline" size="sm" onClick={handleAddField}>
-										Add Field
-									</Button>
+
+							{assetKind === "FILE" && !editMode && (
+								<div className="space-y-3">
+									<div className="text-sm font-semibold">Upload Files</div>
+									<Upload.Dragger
+										multiple
+										fileList={createUploadFiles}
+										onChange={({ fileList }: UploadChangeParam) => setCreateUploadFiles(fileList)}
+										beforeUpload={() => false}
+										className="block cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary/50"
+									>
+										<p className="text-sm font-medium">Click or drag files to this area to upload</p>
+										<p className="mt-1 text-xs text-muted-foreground">Support for multiple files upload</p>
+									</Upload.Dragger>
+									<div className="text-xs text-muted-foreground">
+										Select files to upload with this asset. You can also upload files later.
+									</div>
 								</div>
-								<div className="space-y-4">
-									{fieldsArray.fields.map((fieldItem, index) => (
-										<div
-											key={fieldItem.id}
-											className="grid gap-4 rounded-md border p-4 md:grid-cols-[1.3fr_0.9fr_1.3fr_0.6fr_auto]"
-										>
-											<FormField
-												control={form.control}
-												name={`fields.${index}.key`}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Key</FormLabel>
-														<FormControl>
-															<Input placeholder="url" {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-											<FormField
-												control={form.control}
-												name={`fields.${index}.type`}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Type</FormLabel>
-														<FormControl>
-															<Select value={field.value} onValueChange={field.onChange}>
-																<SelectTrigger>
-																	<SelectValue placeholder="Select type" />
-																</SelectTrigger>
-																<SelectContent>
-																	<SelectItem value="TEXT">TEXT</SelectItem>
-																	<SelectItem value="URL">URL</SelectItem>
-																	<SelectItem value="USERNAME">USERNAME</SelectItem>
-																	<SelectItem value="PASSWORD">PASSWORD</SelectItem>
-																	<SelectItem value="EMAIL">EMAIL</SelectItem>
-																	<SelectItem value="NOTE">NOTE</SelectItem>
-																	<SelectItem value="NUMBER">NUMBER</SelectItem>
-																</SelectContent>
-															</Select>
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-											<FormField
-												control={form.control}
-												name={`fields.${index}.value`}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Value</FormLabel>
-														<FormControl>
-															<Input placeholder="https://canva.com/design/123" {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-											<FormField
-												control={form.control}
-												name={`fields.${index}.isSecret`}
-												render={({ field }) => (
-													<FormItem>
-														<FormLabel>Secret</FormLabel>
-														<FormControl>
-															<div className="flex h-9 items-center">
-																<Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
-															</div>
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-											<div className="flex items-end">
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													onClick={() => handleRemoveField(index)}
-													disabled={fieldsArray.fields.length === 1}
-												>
-													Remove
-												</Button>
+							)}
+
+							{assetKind === "TEXT" && (
+								<div className="space-y-3">
+									<div className="flex items-center justify-between">
+										<div className="text-sm font-semibold">Fields</div>
+										<Button type="button" variant="outline" size="sm" onClick={handleAddField}>
+											Add Field
+										</Button>
+									</div>
+									<div className="space-y-4">
+										{fieldsArray.fields.map((fieldItem, index) => (
+											<div
+												key={fieldItem.id}
+												className="grid gap-4 rounded-md border p-4 md:grid-cols-[1.3fr_0.9fr_1.3fr_0.6fr_auto]"
+											>
+												<FormField
+													control={form.control}
+													name={`fields.${index}.key`}
+													render={({ field }) => (
+														<FormItem>
+															<FormLabel>Key</FormLabel>
+															<FormControl>
+																<Input placeholder="url" {...field} />
+															</FormControl>
+														</FormItem>
+													)}
+												/>
+												<FormField
+													control={form.control}
+													name={`fields.${index}.type`}
+													render={({ field }) => (
+														<FormItem>
+															<FormLabel>Type</FormLabel>
+															<FormControl>
+																<Select value={field.value} onValueChange={field.onChange}>
+																	<SelectTrigger>
+																		<SelectValue placeholder="Select type" />
+																	</SelectTrigger>
+																	<SelectContent>
+																		<SelectItem value="TEXT">TEXT</SelectItem>
+																		<SelectItem value="URL">URL</SelectItem>
+																		<SelectItem value="USERNAME">USERNAME</SelectItem>
+																		<SelectItem value="PASSWORD">PASSWORD</SelectItem>
+																		<SelectItem value="EMAIL">EMAIL</SelectItem>
+																		<SelectItem value="NOTE">NOTE</SelectItem>
+																		<SelectItem value="NUMBER">NUMBER</SelectItem>
+																	</SelectContent>
+																</Select>
+															</FormControl>
+														</FormItem>
+													)}
+												/>
+												<FormField
+													control={form.control}
+													name={`fields.${index}.value`}
+													render={({ field }) => (
+														<FormItem>
+															<FormLabel>Value</FormLabel>
+															<FormControl>
+																<Input placeholder="https://canva.com/design/123" {...field} />
+															</FormControl>
+														</FormItem>
+													)}
+												/>
+												<FormField
+													control={form.control}
+													name={`fields.${index}.isSecret`}
+													render={({ field }) => (
+														<FormItem>
+															<FormLabel>Secret</FormLabel>
+															<FormControl>
+																<div className="flex h-9 items-center">
+																	<Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
+																</div>
+															</FormControl>
+														</FormItem>
+													)}
+												/>
+												<div className="flex items-end">
+													<Button
+														type="button"
+														variant="ghost"
+														size="sm"
+														onClick={() => handleRemoveField(index)}
+														disabled={fieldsArray.fields.length === 1}
+													>
+														Remove
+													</Button>
+												</div>
 											</div>
-										</div>
-									))}
+										))}
+									</div>
 								</div>
-							</div>
+							)}
 
 							<div className="space-y-4 rounded-md border p-4">
 								<div className="text-sm font-semibold">Expiration Notifications</div>
@@ -967,7 +1043,7 @@ export default function ShowroomAssetsPage() {
 
 			{/* View Asset Dialog */}
 			<Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+				<DialogContent className="sm:max-w-3xl">
 					<DialogHeader>
 						<DialogTitle className="flex items-center justify-between">
 							<span>{viewAsset?.name || "Asset Details"}</span>

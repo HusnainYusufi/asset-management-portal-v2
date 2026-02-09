@@ -250,6 +250,7 @@ export default function AssetsPage() {
 	const [isUploading, setIsUploading] = useState(false);
 	const [uploadTarget, setUploadTarget] = useState<FileAssetRow | null>(null);
 	const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
+	const [createUploadFiles, setCreateUploadFiles] = useState<UploadFile[]>([]);
 	const form = useForm<AssetFormValues>({
 		defaultValues: DEFAULT_FORM_VALUES,
 	});
@@ -280,8 +281,11 @@ export default function AssetsPage() {
 	const handleEditAsset = useCallback(
 		async (assetId: string, assetKind: "TEXT" | "FILE") => {
 			try {
-				const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
-				const apiAsset = response.data?.asset;
+				const response = await apiClient.get<AssetDetailApiResponse | { asset?: AssetApiItem }>({
+					url: `/assets/${assetId}`,
+				});
+				const apiAsset =
+					(response as { asset?: AssetApiItem }).asset ?? (response as AssetDetailApiResponse).data?.asset;
 				if (!apiAsset) {
 					throw new Error("Asset not found");
 				}
@@ -318,8 +322,11 @@ export default function AssetsPage() {
 			setIsViewLoading(true);
 			setRevealedFields({});
 			try {
-				const response = await apiClient.get<AssetDetailApiResponse>({ url: `/assets/${assetId}` });
-				const apiAsset = response.data?.asset;
+				const response = await apiClient.get<AssetDetailApiResponse | { asset?: AssetApiItem }>({
+					url: `/assets/${assetId}`,
+				});
+				const apiAsset =
+					(response as { asset?: AssetApiItem }).asset ?? (response as AssetDetailApiResponse).data?.asset;
 				if (!apiAsset) {
 					throw new Error("Asset not found");
 				}
@@ -642,14 +649,14 @@ export default function AssetsPage() {
 							}))
 					: [],
 			tags,
-			expirationNotificationsEnabled: values.expirationNotificationsEnabled,
 		};
 
-		// Only include expirationDate if notifications are enabled and a date is set
-		if (values.expirationNotificationsEnabled && values.expirationDate) {
-			payload.expirationDate = values.expirationDate.toISOString();
-		} else {
-			payload.expirationDate = null;
+		// Only include expiration fields when notifications are enabled
+		if (values.expirationNotificationsEnabled) {
+			payload.expirationNotificationsEnabled = true;
+			if (values.expirationDate) {
+				payload.expirationDate = values.expirationDate.toISOString();
+			}
 		}
 
 		let resultAsset: AssetApiItem | undefined;
@@ -711,14 +718,35 @@ export default function AssetsPage() {
 				}
 
 				if (values.assetKind === "FILE") {
+					// Upload files if any were selected during creation
+					const assetId = resultAsset?.id;
+					if (assetId && createUploadFiles.length > 0) {
+						const formData = new FormData();
+						createUploadFiles.forEach((file) => {
+							if (file.originFileObj) {
+								formData.append("files", file.originFileObj);
+							}
+						});
+						try {
+							await apiClient.post({
+								url: `/assets/${assetId}/files`,
+								data: formData,
+								headers: { "Content-Type": "multipart/form-data" },
+							});
+						} catch (uploadError) {
+							console.error(uploadError);
+							toast.error("Asset created but file upload failed", { position: "top-center" });
+						}
+					}
+					const { fileName, totalSize } = summarizeFiles(createUploadFiles);
 					const newFileAsset: FileAssetRow = {
-						id: resultAsset?.id ?? createId(),
+						id: assetId ?? createId(),
 						name: values.name || "Untitled File Asset",
-						type: values.type || "FILE",
+						type: values.type || "FILES",
 						tags,
-						fileName: "No files uploaded",
+						fileName: createUploadFiles.length > 0 ? fileName : "No files uploaded",
 						fileUrl: "-",
-						fileSize: "-",
+						fileSize: createUploadFiles.length > 0 ? totalSize : "-",
 						lastUpdated: new Date().toISOString().slice(0, 10),
 					};
 					setFileAssets((prev) => [newFileAsset, ...prev]);
@@ -744,6 +772,7 @@ export default function AssetsPage() {
 
 		form.reset(DEFAULT_FORM_VALUES);
 		setEditMode(null);
+		setCreateUploadFiles([]);
 		setIsDialogOpen(false);
 	};
 
@@ -901,11 +930,12 @@ export default function AssetsPage() {
 					setIsDialogOpen(open);
 					if (!open) {
 						setEditMode(null);
+						setCreateUploadFiles([]);
 						form.reset(DEFAULT_FORM_VALUES);
 					}
 				}}
 			>
-				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+				<DialogContent className="sm:max-w-4xl">
 					<DialogHeader>
 						<DialogTitle>{editMode ? "Edit asset" : "Add new asset"}</DialogTitle>
 					</DialogHeader>
@@ -1021,6 +1051,30 @@ export default function AssetsPage() {
 											)}
 										/>
 									)}
+								</div>
+							)}
+
+							{assetKind === "FILE" && !editMode && (
+								<div className="space-y-3">
+									<div className="text-sm font-semibold">Upload Files</div>
+									<Upload
+										multiple
+										maxCount={10}
+										fileList={createUploadFiles}
+										onChange={({ fileList }: UploadChangeParam) => {
+											setCreateUploadFiles(
+												fileList.map((file) => ({
+													...file,
+													status: file.status ?? "done",
+												})),
+											);
+										}}
+										beforeUpload={() => false}
+										thumbnail
+									/>
+									<div className="text-xs text-muted-foreground">
+										Select files to upload with this asset. You can also upload files later.
+									</div>
 								</div>
 							)}
 

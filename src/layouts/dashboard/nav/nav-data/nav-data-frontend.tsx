@@ -2,6 +2,17 @@ import { Icon } from "@/components/icon";
 import type { NavProps } from "@/components/nav";
 export const frontendNavData: NavProps["data"] = [
 	{
+		name: "sys.nav.dashboard",
+		items: [
+			{
+				title: "sys.nav.dashboard",
+				path: "/dashboard",
+				icon: <Icon icon="solar:chart-square-bold-duotone" size="24" />,
+				auth: ["SUPERADMIN", "OWNER", "EMPLOYEE"],
+			},
+		],
+	},
+	{
 		name: "sys.nav.clients",
 		items: [
 			{
