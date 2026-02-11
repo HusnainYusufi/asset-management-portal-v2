@@ -1,4 +1,4 @@
-import { Table, Upload } from "antd";
+import { Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { Check, Copy, Download, ExternalLink, Eye, EyeOff, Image as ImageIcon, Search, Trash2 } from "lucide-react";
@@ -9,8 +9,8 @@ import { toast } from "sonner";
 
 import apiClient from "@/api/apiClient";
 import { Icon } from "@/components/icon";
+import { Upload } from "@/components/upload";
 import { getFileThumb } from "@/components/upload/utils";
-import { GLOBAL_CONFIG } from "@/global-config";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -170,16 +170,15 @@ const mapFileAsset = (asset: ShowroomAssetApiItem): FileAssetRow => {
 };
 
 const buildFileUrl = (file: AssetFile) => {
-	// Use the API base URL to construct the file URL so it works in both dev (via proxy) and production
-	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
+	// In dev, the Vite proxy forwards /uploads/* to the backend.
+	// In production, files are served from the same origin.
+	// Always return a same-origin relative URL so downloads and cross-origin rules work.
 	if (file.url) {
 		if (file.url.startsWith("http://") || file.url.startsWith("https://")) return file.url;
-		const relativeUrl = file.url.startsWith("/") ? file.url : `/${file.url}`;
-		return `${baseUrl}${relativeUrl}`;
+		return file.url.startsWith("/") ? file.url : `/${file.url}`;
 	}
 	if (!file.relativePath) return "";
-	const path = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
-	return `${baseUrl}${path}`;
+	return file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
 };
 
 const getFileDisplayName = (file: AssetFile) => file.originalName ?? file.filename ?? "Untitled file";
@@ -1007,16 +1006,21 @@ export default function ShowroomAssetsPage() {
 							{assetKind === "FILE" && (
 								<div className="space-y-3">
 									<div className="text-sm font-semibold">{editMode ? "Upload Additional Files" : "Upload Files"}</div>
-									<Upload.Dragger
+									<Upload
 										multiple
+										maxCount={10}
 										fileList={createUploadFiles}
-										onChange={({ fileList }: UploadChangeParam) => setCreateUploadFiles(fileList)}
+										onChange={({ fileList }: UploadChangeParam) => {
+											setCreateUploadFiles(
+												fileList.map((file) => ({
+													...file,
+													status: file.status ?? "done",
+												})),
+											);
+										}}
 										beforeUpload={() => false}
-										className="block cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary/50"
-									>
-										<p className="text-sm font-medium">Click or drag files to this area to upload</p>
-										<p className="mt-1 text-xs text-muted-foreground">Support for multiple files upload</p>
-									</Upload.Dragger>
+										thumbnail
+									/>
 									<div className="text-xs text-muted-foreground">
 										{editMode
 											? "Add more files to this asset. Existing files will not be affected."
@@ -1174,29 +1178,57 @@ export default function ShowroomAssetsPage() {
 				</DialogContent>
 			</Dialog>
 
-			<Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-				<DialogContent className="sm:max-w-lg">
+			<Dialog
+				open={isUploadDialogOpen}
+				onOpenChange={(open) => {
+					setIsUploadDialogOpen(open);
+					if (!open) {
+						setFileList([]);
+						setUploadTarget(null);
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-2xl">
 					<DialogHeader>
-						<DialogTitle>Upload Files</DialogTitle>
+						<DialogTitle>Upload files</DialogTitle>
 					</DialogHeader>
-					<div className="py-4">
-						<Upload.Dragger
+					<div className="space-y-4">
+						<div className="text-sm text-muted-foreground">
+							Uploading to:{" "}
+							<span className="font-medium text-foreground">{uploadTarget?.name ?? "Selected asset"}</span>
+						</div>
+						<Upload
 							multiple
+							maxCount={5}
 							fileList={fileList}
-							onChange={({ fileList }) => setFileList(fileList)}
+							onChange={({ fileList }: UploadChangeParam) => {
+								setFileList(
+									fileList.map((file) => ({
+										...file,
+										status: file.status ?? "done",
+									})),
+								);
+							}}
 							beforeUpload={() => false}
-							className="block cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors hover:border-primary/50"
-						>
-							<p className="text-sm font-medium">Click or drag files to this area to upload</p>
-							<p className="mt-1 text-xs text-muted-foreground">Support for multiple files upload</p>
-						</Upload.Dragger>
+							thumbnail
+						/>
+						<div className="text-xs text-muted-foreground">Select up to 5 files to upload.</div>
 					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+					<DialogFooter className="mt-6">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setIsUploadDialogOpen(false)}
+							disabled={isSubmitting}
+						>
 							Cancel
 						</Button>
-						<Button onClick={() => void handleUploadFiles()} disabled={isSubmitting || fileList.length === 0}>
-							{isSubmitting ? "Uploading..." : "Upload Files"}
+						<Button
+							type="button"
+							onClick={() => void handleUploadFiles()}
+							disabled={isSubmitting || fileList.length === 0}
+						>
+							{isSubmitting ? "Uploading..." : "Upload files"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

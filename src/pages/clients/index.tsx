@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -102,6 +102,10 @@ export default function ClientsPage() {
 	const [clients, setClients] = useState<ClientRow[]>([]);
 	const [availableRoles, setAvailableRoles] = useState<RoleApiItem[]>([]);
 	const [rolesLoading, setRolesLoading] = useState(false);
+	const [deleteTarget, setDeleteTarget] = useState<ClientRow | null>(null);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+	const [confirmName, setConfirmName] = useState("");
+	const [isDeleting, setIsDeleting] = useState(false);
 	const userRoles = useUserRoles();
 	// Only consider user as SuperAdmin if roles are loaded AND user has SUPERADMIN role
 	const rolesLoaded = userRoles.length > 0;
@@ -157,6 +161,30 @@ export default function ClientsPage() {
 		setOpen(false);
 	};
 
+	const handleRequestDelete = useCallback((client: ClientRow) => {
+		setDeleteTarget(client);
+		setConfirmName("");
+		setIsDeleteDialogOpen(true);
+	}, []);
+
+	const handleConfirmDelete = useCallback(async () => {
+		if (!deleteTarget) return;
+		setIsDeleting(true);
+		try {
+			await apiClient.delete({ url: `/clients/${deleteTarget.id}` });
+			toast.success("Client deleted successfully", { position: "top-center" });
+			setIsDeleteDialogOpen(false);
+			setDeleteTarget(null);
+			setConfirmName("");
+			await fetchClients();
+		} catch (error) {
+			console.error(error);
+			toast.error("Failed to delete client", { position: "top-center" });
+		} finally {
+			setIsDeleting(false);
+		}
+	}, [deleteTarget, fetchClients]);
+
 	const columns = useMemo<ColumnsType<ClientRow>>(
 		() => [
 			{
@@ -188,8 +216,18 @@ export default function ClientsPage() {
 				width: 140,
 				sorter: (a, b) => a.createdAt.localeCompare(b.createdAt),
 			},
+			{
+				title: "Actions",
+				key: "actions",
+				width: 120,
+				render: (_: unknown, record: ClientRow) => (
+					<Button type="button" variant="destructive" size="sm" onClick={() => handleRequestDelete(record)}>
+						Delete
+					</Button>
+				),
+			},
 		],
-		[],
+		[handleRequestDelete],
 	);
 
 	const handleOnboard = async (values: ClientOnboardPayload) => {
@@ -239,23 +277,25 @@ export default function ClientsPage() {
 	}
 
 	return (
-		<Card>
-			<CardHeader>
-				<div className="flex items-center justify-between">
-					<div className="text-lg font-semibold">Clients</div>
-					<Button onClick={handleOpen}>Add Clients</Button>
-				</div>
-			</CardHeader>
-			<CardContent>
-				<Table
-					rowKey="id"
-					size="small"
-					scroll={{ x: "max-content" }}
-					pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 25, 50] }}
-					columns={columns}
-					dataSource={clients}
-				/>
-			</CardContent>
+		<>
+			<Card>
+				<CardHeader>
+					<div className="flex items-center justify-between">
+						<div className="text-lg font-semibold">Clients</div>
+						<Button onClick={handleOpen}>Add Clients</Button>
+					</div>
+				</CardHeader>
+				<CardContent>
+					<Table
+						rowKey="id"
+						size="small"
+						scroll={{ x: "max-content" }}
+						pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 25, 50] }}
+						columns={columns}
+						dataSource={clients}
+					/>
+				</CardContent>
+			</Card>
 
 			<Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
 				<DialogContent>
@@ -359,6 +399,62 @@ export default function ClientsPage() {
 					</Form>
 				</DialogContent>
 			</Dialog>
-		</Card>
+
+			<Dialog
+				open={isDeleteDialogOpen}
+				onOpenChange={(nextOpen) => {
+					if (!nextOpen) {
+						setIsDeleteDialogOpen(false);
+						setDeleteTarget(null);
+						setConfirmName("");
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Client</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm">
+							<p className="font-semibold text-destructive">This action is permanent and cannot be undone.</p>
+							<p className="mt-2 text-muted-foreground">
+								Deleting <span className="font-semibold text-foreground">{deleteTarget?.clientName}</span> will
+								permanently remove:
+							</p>
+							<ul className="mt-2 list-inside list-disc space-y-1 text-muted-foreground">
+								<li>All assets (text and file-based)</li>
+								<li>All showrooms and showroom assets</li>
+								<li>All uploaded files</li>
+								<li>All users belonging to this client</li>
+								<li>All notifications</li>
+							</ul>
+						</div>
+						<div className="space-y-2">
+							<p className="text-sm text-muted-foreground">
+								Type <span className="font-semibold text-foreground">{deleteTarget?.clientName}</span> to confirm:
+							</p>
+							<Input
+								value={confirmName}
+								onChange={(e) => setConfirmName(e.target.value)}
+								placeholder="Type client name to confirm"
+							/>
+						</div>
+					</div>
+					<DialogFooter className="mt-4">
+						<Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							variant="destructive"
+							onClick={() => void handleConfirmDelete()}
+							disabled={isDeleting || confirmName !== deleteTarget?.clientName}
+						>
+							{isDeleting ? "Deleting..." : "Delete Client"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }

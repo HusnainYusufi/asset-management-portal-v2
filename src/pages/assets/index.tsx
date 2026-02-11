@@ -9,7 +9,6 @@ import apiClient from "@/api/apiClient";
 import { Icon } from "@/components/icon";
 import { Upload } from "@/components/upload";
 import { getFileThumb } from "@/components/upload/utils";
-import { GLOBAL_CONFIG } from "@/global-config";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -184,18 +183,15 @@ const formatDate = (value?: string) => {
 };
 
 const buildFileUrl = (file: AssetFile) => {
+	// In dev, the Vite proxy forwards /uploads/* to the backend.
+	// In production, files are served from the same origin.
+	// Always return a same-origin relative URL so downloads and cross-origin rules work.
 	if (file.url) {
-		if (file.url.startsWith("http://") || file.url.startsWith("https://")) {
-			return file.url;
-		}
-		const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
-		const relativeUrl = file.url.startsWith("/") ? file.url : `/${file.url}`;
-		return `${baseUrl}${relativeUrl}`;
+		if (file.url.startsWith("http://") || file.url.startsWith("https://")) return file.url;
+		return file.url.startsWith("/") ? file.url : `/${file.url}`;
 	}
 	if (!file.relativePath) return "";
-	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
-	const relativePath = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
-	return `${baseUrl}${relativePath}`;
+	return file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
 };
 
 const getFileDisplayName = (file: AssetFile) => file.originalName ?? file.filename ?? "Untitled file";
