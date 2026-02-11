@@ -721,7 +721,7 @@ export default function AssetsPage() {
 						await apiClient.post({
 							url: `/assets/${editMode.id}/files`,
 							data: formData,
-							headers: { "Content-Type": "multipart/form-data" },
+							headers: { "Content-Type": undefined },
 						});
 					} catch (uploadError) {
 						console.error(uploadError);
@@ -787,7 +787,7 @@ export default function AssetsPage() {
 							await apiClient.post({
 								url: `/assets/${assetId}/files`,
 								data: formData,
-								headers: { "Content-Type": "multipart/form-data" },
+								headers: { "Content-Type": undefined },
 							});
 						} catch (uploadError) {
 							console.error(uploadError);
@@ -849,7 +849,7 @@ export default function AssetsPage() {
 			await apiClient.post({
 				url: `/assets/${uploadTarget.id}/files`,
 				data: formData,
-				headers: { "Content-Type": "multipart/form-data" },
+				headers: { "Content-Type": undefined },
 			});
 		} catch (error) {
 			console.error(error);

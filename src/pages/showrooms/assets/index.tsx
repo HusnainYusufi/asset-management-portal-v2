@@ -170,16 +170,16 @@ const mapFileAsset = (asset: ShowroomAssetApiItem): FileAssetRow => {
 };
 
 const buildFileUrl = (file: AssetFile) => {
+	// Use the API base URL to construct the file URL so it works in both dev (via proxy) and production
+	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
 	if (file.url) {
 		if (file.url.startsWith("http://") || file.url.startsWith("https://")) return file.url;
-		const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
 		const relativeUrl = file.url.startsWith("/") ? file.url : `/${file.url}`;
 		return `${baseUrl}${relativeUrl}`;
 	}
 	if (!file.relativePath) return "";
-	const baseUrl = GLOBAL_CONFIG.apiBaseUrl?.replace(/\/$/, "") || "";
-	const relativePath = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
-	return `${baseUrl}${relativePath}`;
+	const path = file.relativePath.startsWith("/") ? file.relativePath : `/${file.relativePath}`;
+	return `${baseUrl}${path}`;
 };
 
 const getFileDisplayName = (file: AssetFile) => file.originalName ?? file.filename ?? "Untitled file";
@@ -345,7 +345,7 @@ export default function ShowroomAssetsPage() {
 						await apiClient.post({
 							url: `/showrooms/${showroomId}/assets/${editMode.id}/files`,
 							data: formData,
-							headers: { "Content-Type": "multipart/form-data" },
+							headers: { "Content-Type": undefined },
 						});
 					} catch (uploadError) {
 						console.error(uploadError);
@@ -379,7 +379,7 @@ export default function ShowroomAssetsPage() {
 							await apiClient.post({
 								url: `/showrooms/${showroomId}/assets/${newAssetId}/files`,
 								data: formData,
-								headers: { "Content-Type": "multipart/form-data" },
+								headers: { "Content-Type": undefined },
 							});
 						} catch (uploadError) {
 							console.error(uploadError);
@@ -496,9 +496,7 @@ export default function ShowroomAssetsPage() {
 			await apiClient.post({
 				url: `/showrooms/${showroomId}/assets/${uploadTarget.id}/files`,
 				data: formData,
-				headers: {
-					"Content-Type": "multipart/form-data",
-				},
+				headers: { "Content-Type": undefined },
 			});
 			toast.success("Files uploaded successfully", { position: "top-center" });
 			setIsUploadDialogOpen(false);
