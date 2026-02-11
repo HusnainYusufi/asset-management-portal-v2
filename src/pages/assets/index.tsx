@@ -1,27 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
-import type { ColumnsType } from "antd/es/table";
 import { Table } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
+import { Search as SearchIcon, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
-
 import apiClient from "@/api/apiClient";
 import { Icon } from "@/components/icon";
 import { Upload } from "@/components/upload";
 import { getFileThumb } from "@/components/upload/utils";
+import { GLOBAL_CONFIG } from "@/global-config";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
+import { DatePicker } from "@/ui/date-picker";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/ui/form";
 import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
-import { DatePicker } from "@/ui/date-picker";
-import { Label } from "@/ui/label";
-import { GLOBAL_CONFIG } from "@/global-config";
 import { fBytes } from "@/utils/format-number";
-import { useFieldArray, useForm } from "react-hook-form";
-import { Trash2, Search as SearchIcon } from "lucide-react";
 
 type AssetField = {
 	key: string;
@@ -710,6 +709,26 @@ export default function AssetsPage() {
 					resultAsset = response.asset;
 				}
 
+				// Upload additional files if any were selected during edit
+				if (createUploadFiles.length > 0) {
+					const formData = new FormData();
+					createUploadFiles.forEach((file) => {
+						if (file.originFileObj) {
+							formData.append("files", file.originFileObj);
+						}
+					});
+					try {
+						await apiClient.post({
+							url: `/assets/${editMode.id}/files`,
+							data: formData,
+							headers: { "Content-Type": "multipart/form-data" },
+						});
+					} catch (uploadError) {
+						console.error(uploadError);
+						toast.error("Asset updated but file upload failed", { position: "top-center" });
+					}
+				}
+
 				// Update the local state
 				if (editMode.kind === "TEXT") {
 					setTextAssets((prev: TextAssetRow[]) =>
@@ -1091,9 +1110,9 @@ export default function AssetsPage() {
 								</div>
 							)}
 
-							{assetKind === "FILE" && !editMode && (
+							{assetKind === "FILE" && (
 								<div className="space-y-3">
-									<div className="text-sm font-semibold">Upload Files</div>
+									<div className="text-sm font-semibold">{editMode ? "Upload Additional Files" : "Upload Files"}</div>
 									<Upload
 										multiple
 										maxCount={10}
@@ -1110,7 +1129,9 @@ export default function AssetsPage() {
 										thumbnail
 									/>
 									<div className="text-xs text-muted-foreground">
-										Select files to upload with this asset. You can also upload files later.
+										{editMode
+											? "Add more files to this asset. Existing files will not be affected."
+											: "Select files to upload with this asset. You can also upload files later."}
 									</div>
 								</div>
 							)}
